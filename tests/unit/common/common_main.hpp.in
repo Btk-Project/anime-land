@@ -1,0 +1,23 @@
+#include <gtest/gtest.h>
+
+#include "nekoproto/global/global.hpp"
+#include "nekoproto/global/log.hpp"
+#include <locale> // IWYU pragma: export
+
+#ifndef EXPAND_IN_MAIN
+#define EXPAND_IN_MAIN
+#endif
+
+#ifndef EXPAND_IN_MAIN_WITH_ARGS
+#define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)
+#endif
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    NEKO_LOG_SET_LEVEL(NEKO_LOG_LEVEL_TRACE);
+    std::cout << "NEKO_CPP_PLUS: " << NEKO_CPP_PLUS << std::endl;
+    std::setlocale(LC_ALL, "en_US.UTF-8");
+    EXPAND_IN_MAIN;
+    EXPAND_IN_MAIN_WITH_ARGS(argc, argv);
+    return RUN_ALL_TESTS();
+}
