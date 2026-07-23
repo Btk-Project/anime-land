@@ -38,6 +38,10 @@ local function default_test_config(file)
         config.qt_frameworks = {"QtCore", "QtNetwork"}
     elseif group == "presentation" then
         config.deps = {"presentation"}
+    elseif group == "persistence" then
+        config.run_timeout = 10000
+        config.deps = {"persistence"}
+        config.qt_frameworks = {"QtCore"}
     -- else
         -- append_values(config.files, "../src/proto_base.cpp", "../src/jsonrpc.cpp")
     end

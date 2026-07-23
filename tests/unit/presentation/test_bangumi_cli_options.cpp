@@ -105,6 +105,26 @@ TEST(BangumiCliOptions, CollectionsDefaultsToSystemStoreAndFirstPage) {
   EXPECT_EQ(command.offset, 0);
 }
 
+TEST(BangumiCliOptions, LimitRangeIsOneInclusiveToFiftyOneExclusive) {
+  const char *minimumArgv[] = {"anime-land", "collections", "--limit", "1"};
+  auto minimum = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(minimumArgv)), minimumArgv);
+  ASSERT_TRUE(minimum) << minimum.error().message();
+  EXPECT_EQ(std::get<CollectionsCommand>(*minimum).limit, 1);
+
+  const char *maximumArgv[] = {"anime-land", "search", "Frieren", "--limit",
+                               "50"};
+  auto maximum = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(maximumArgv)), maximumArgv);
+  ASSERT_TRUE(maximum) << maximum.error().message();
+  EXPECT_EQ(std::get<SearchCommand>(*maximum).limit, 50);
+
+  const char *tooLargeArgv[] = {"anime-land", "collections", "--limit", "51"};
+  auto tooLarge = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(tooLargeArgv)), tooLargeArgv);
+  EXPECT_FALSE(tooLarge);
+}
+
 TEST(BangumiCliOptions, CommonNestedFieldsKeepAbsoluteCliNames) {
   const char *argv[] = {"anime-land", "status",
                         "--common.credentials.tokenStore", "file"};

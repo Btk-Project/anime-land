@@ -486,22 +486,26 @@ public:
 
 ```cpp
 struct MediaResource {
-    QUuid id;
-    QUrl location;
-    MediaSourceType sourceType;
-    std::optional<std::int64_t> subjectId;
-    std::optional<std::int64_t> episodeId;
+    SourceResourceId id;
+    QString providerKey;
+    QString stableKey;
+    int descriptorVersion;
 };
 
 struct PlaybackProgress {
-    std::int64_t subjectId;
-    std::int64_t episodeId;
+    EpisodeId episodeId;
+    std::optional<SourceItemId> lastSourceItemId;
     std::chrono::milliseconds position;
-    std::chrono::milliseconds duration;
+    std::optional<std::chrono::milliseconds> duration;
     bool completed;
     QDateTime updatedAt;
 };
 ```
+
+本地 ID、外部身份、媒体资源根和可播放项的完整边界以
+[`database/local_database_design.md`](database/local_database_design.md) 为准。
+UI 和播放层不得直接把 Bangumi ID、文件路径或 provider 私有 descriptor 当作核心
+对象身份。
 
 ### 文件匹配等级
 
@@ -537,19 +541,12 @@ public:
 
 ### 表结构
 
-```text
-subjects
-episodes
-collections
-media_resources
-episode_media_mappings
-playback_progress
-bangumi_cache
-image_cache
-sync_queue
-settings
-schema_migrations
-```
+v0.1 的表结构、Migration、Store API 和事务边界以
+[`database/local_database_design.md`](database/local_database_design.md) 为实施契约。
+本节不再维护一份容易漂移的表名副本。
+
+`bangumi_cache`、`sync_queue`、账号同步和图片二进制缓存不属于 v0.1 核心数据库；
+已经浏览过的条目通过标准化 `subjects`、`tags` 和 `episodes` 数据离线可读。
 
 ### 数据库规则
 
@@ -560,6 +557,9 @@ schema_migrations
 - Schema 变更必须添加 migration。
 - 测试使用临时数据库。
 - Repository 不向 UI 暴露 SQL。
+- SQLite 外键必须在开始 Migration 事务前启用并验证。
+- 使用 ilias-sql 执行 Migration 时，每条 DDL 独立提交给驱动；不得假设一次
+  `execute()` 会消费多条 SQL。
 
 ---
 
@@ -773,8 +773,8 @@ docs/adr/
 
 - 实现 Bangumi 搜索。
 - 实现条目详情和章节列表。
-- 实现图片和 JSON 缓存。
-- 实现本地媒体扫描。
+- 持久化已浏览条目的标准化目录数据。
+- 实现本地文件导入。
 - 实现文件与章节手动关联。
 - 实现最近播放和继续观看。
 - 实现文件名自动匹配初版。

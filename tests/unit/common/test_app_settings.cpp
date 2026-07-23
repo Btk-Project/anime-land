@@ -110,7 +110,7 @@ TEST(AppSettings, Load) {
     EXPECT_EQ(settings->sql_settings.database_host, "localhost");
     EXPECT_EQ(settings->sql_settings.database_password, "password");
     EXPECT_EQ(settings->sql_settings.database_port, 3306);
-    EXPECT_EQ(settings->sql_settings.database_type, "sqlcipher");
+    EXPECT_EQ(settings->sql_settings.database_type, "sqlite");
     EXPECT_EQ(settings->sql_settings.database_user, "root");
     EXPECT_EQ(settings->sql_settings.database_name, "anime_land");
     EXPECT_EQ(settings->sql_settings.database_path, "anime_land.db");

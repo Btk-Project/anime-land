@@ -42,14 +42,14 @@ NEKO_DETAIL_DEFINE_TAG_PROPERTY(bool, encrypt, encrypt)
 // MARK: App Settings
 struct SqlSettings {
   // database common settings
-  std::string database_type = "sqlcipher"; // sqlcipher, mysql
+  std::string database_type = "sqlite"; // sqlite, mysql
   std::string database_password = "password";
   // mysql settings
   std::string database_host = "localhost";
   uint16_t database_port = 3306;
   std::string database_user = "root";
   std::string database_name = "anime_land";
-  // sqlcipher settings
+  // sqlite settings
   std::string database_path = "anime_land.db";
 
   // clang-format off
