@@ -1,5 +1,5 @@
 target("presentation")
-    add_rules("qt.shared")
+    add_rules("qt.static")
     add_files("./**.cpp", "./**.hpp")
     add_includedirs("../../src")
     add_packages("ilias", "neko-proto-tools")

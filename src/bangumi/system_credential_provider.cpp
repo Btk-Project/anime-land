@@ -28,8 +28,8 @@
 #elif defined(Q_OS_WIN)
 
 #define NOMINMAX
-#include <wincred.h>
 #include <windows.h>
+#include <wincred.h>
 
 #elif defined(Q_OS_MACOS)
 

@@ -109,8 +109,9 @@ add_requireconfs("**ilias-sql", {
     override = true, -- 强制覆盖
     configs = {shared = true,
                stdcxx = tonumber(get_config("stdcxx")),
-               enable_sqlite = "sqlcipher",
-               enable_mysql = true}
+               enable_sqlite = "sqlite",
+               enable_mysql = true,
+               }
 })
 
 add_requireconfs("**spdlog", {

@@ -1,5 +1,5 @@
 target("common")
-    add_rules("qt.shared")
+    add_rules("qt.static")
     add_files("./**.cpp")
     add_includedirs("../../src")
     add_packages("neko-proto-tools", "ilias", "libsodium", {public = true})
