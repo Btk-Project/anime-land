@@ -18,11 +18,14 @@ struct QtJsonChild {
   QString label;
   std::int64_t count = 0;
 
+  // clang-format off
   struct Neko {
-    static constexpr auto value =
-        NEKO_NAMESPACE::Object("label", &QtJsonChild::label, "count",
-                               &QtJsonChild::count);
+    static constexpr auto value = NEKO_NAMESPACE::Object(
+        "label", &QtJsonChild::label,
+        "count", &QtJsonChild::count
+    );
   };
+  // clang-format on
 };
 
 struct QtJsonProbe {
@@ -30,22 +33,29 @@ struct QtJsonProbe {
   std::vector<QtJsonChild> children;
   std::optional<QString> note;
 
+  // clang-format off
   struct Neko {
     static constexpr auto value = NEKO_NAMESPACE::Object(
-        "title", &QtJsonProbe::title, "children", &QtJsonProbe::children,
-        "note", &QtJsonProbe::note);
+        "title",    &QtJsonProbe::title,
+        "children", &QtJsonProbe::children,
+        "note",     &QtJsonProbe::note
+    );
   };
+  // clang-format on
 };
 
 struct NativeQtJsonProbe {
   QJsonObject object;
   QJsonArray array;
 
+  // clang-format off
   struct Neko {
     static constexpr auto value = NEKO_NAMESPACE::Object(
-        "object", &NativeQtJsonProbe::object, "array",
-        &NativeQtJsonProbe::array);
+        "object", &NativeQtJsonProbe::object,
+        "array",  &NativeQtJsonProbe::array
+    );
   };
+  // clang-format on
 };
 
 auto sampleProbe() -> QtJsonProbe {
@@ -151,6 +161,27 @@ TEST(QtJsonSerializer, PreservesSigned64BitIntegerLimits) {
         << (input.error() == nullptr ? "" : input.error()->msg);
     EXPECT_EQ(decoded, expected);
   }
+}
+
+TEST(QtJsonSerializer, SupportsScalarRootsWithoutQt69Apis) {
+  QString encoded;
+  NEKO_NAMESPACE::QtJsonOutputSerializer output(encoded);
+  ASSERT_TRUE(output(QStringLiteral("scalar")));
+  ASSERT_TRUE(output.end());
+  EXPECT_EQ(encoded, QStringLiteral("\"scalar\""));
+
+  QString decoded;
+  NEKO_NAMESPACE::QtJsonInputSerializer input(encoded);
+  ASSERT_TRUE(input(decoded));
+  EXPECT_EQ(decoded, QStringLiteral("scalar"));
+}
+
+TEST(QtJsonSerializer, RejectsMultipleRootValues) {
+  std::int64_t decoded = 0;
+  NEKO_NAMESPACE::QtJsonInputSerializer input(QByteArrayLiteral("1, 2"));
+  EXPECT_FALSE(input(decoded));
+  ASSERT_NE(input.error(), nullptr);
+  EXPECT_NE(input.error()->msg.find("exactly one root"), std::string::npos);
 }
 
 TEST(QtJsonSerializer, RejectsUnsignedIntegerAboveQint64) {

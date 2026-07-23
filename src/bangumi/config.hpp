@@ -16,7 +16,7 @@
 #include <string_view>
 
 namespace anime_land {
-
+using namespace NEKO_NAMESPACE;
 /** Permissions exposed by Bangumi's OAuth application settings page. */
 enum class BangumiCapability : std::uint16_t {
   None = 0,
@@ -91,26 +91,18 @@ struct BangumiToken {
   std::int64_t userId = 0;
   std::int64_t expiresAt = 0;
 
+  // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "accessToken",
-        NEKO_NAMESPACE::make_tags<
-            NEKO_NAMESPACE::rename_tag<"access_token">>(
-            &BangumiToken::accessToken),
-        "refreshToken",
-        NEKO_NAMESPACE::make_tags<
-            NEKO_NAMESPACE::rename_tag<"refresh_token">>(
-            &BangumiToken::refreshToken),
-        "tokenType",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"token_type">>(
-            &BangumiToken::tokenType),
-        "scope", &BangumiToken::scope, "userId",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"user_id">>(
-            &BangumiToken::userId),
-        "expiresAt",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"expires_at">>(
-            &BangumiToken::expiresAt));
+    static constexpr auto value = Object(
+        "accessToken",  make_tags<rename_tag<"access_token">>(&BangumiToken::accessToken),
+        "refreshToken", make_tags<rename_tag<"refresh_token">>(&BangumiToken::refreshToken),
+        "tokenType",    make_tags<rename_tag<"token_type">>(&BangumiToken::tokenType),
+        "scope",        &BangumiToken::scope,
+        "userId",       make_tags<rename_tag<"user_id">>(&BangumiToken::userId),
+        "expiresAt",    make_tags<rename_tag<"expires_at">>(&BangumiToken::expiresAt)
+    );
   };
+  // clang-format on
 };
 
 /**
@@ -122,10 +114,14 @@ struct BangumiUserAvatar {
   std::optional<QString> small;
   std::optional<QString> large;
 
+  // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "small", &BangumiUserAvatar::small, "large", &BangumiUserAvatar::large);
+    static constexpr auto value = Object(
+        "small", &BangumiUserAvatar::small,
+        "large", &BangumiUserAvatar::large
+    );
   };
+  // clang-format on
 };
 
 /**
@@ -139,11 +135,16 @@ struct BangumiUser {
   QString nickname;
   BangumiUserAvatar avatar;
 
+  // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "id", &BangumiUser::id, "username", &BangumiUser::username,
-        "nickname", &BangumiUser::nickname, "avatar", &BangumiUser::avatar);
+    static constexpr auto value = Object(
+        "id",       &BangumiUser::id,
+        "username", &BangumiUser::username,
+        "nickname", &BangumiUser::nickname,
+        "avatar",   &BangumiUser::avatar
+    );
   };
+  // clang-format on
 };
 
 enum class BangumiErrorCode {

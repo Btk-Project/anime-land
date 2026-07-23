@@ -18,10 +18,14 @@ struct QtSerializationProbe {
   QString text;
   QUrl url;
 
+  // clang-format off
   struct Neko {
     constexpr static auto value = NEKO_NAMESPACE::Object(
-        "text", &QtSerializationProbe::text, "url", &QtSerializationProbe::url);
+        "text", &QtSerializationProbe::text,
+        "url",  &QtSerializationProbe::url
+    );
   };
+  // clang-format on
 };
 
 auto temporarySettingsPath(std::string_view name) -> std::filesystem::path {

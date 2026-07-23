@@ -55,7 +55,7 @@ auto encodeStoredToken(const BangumiToken &token) -> BangumiResult<QByteArray> {
   if (!data) {
     return ilias::Err(
         bangumiError(BangumiErrorCode::CredentialStoreError,
-                     QStringLiteral("无法把 Bangumi 凭据序列化为 Qt JSON")));
+                     QStringLiteral("无法把 Bangumi 凭据序列化为 RapidJSON")));
   }
   return std::move(*data);
 }

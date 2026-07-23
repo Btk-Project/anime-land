@@ -14,10 +14,12 @@
 #include "bangumi/collection.hpp"
 #include "bangumi/config.hpp"
 #include "bangumi/http_request.hpp"
+#include "bangumi/protocol.hpp"
 #include "bangumi/system_credential_provider_p.hpp"
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -86,7 +88,85 @@ private:
   std::shared_ptr<FakeSystemCredentialState> mState;
 };
 
+struct RapidJsonProbe {
+  QString text;
+  std::int64_t count = 0;
+  std::optional<QString> note;
+
+  // clang-format off
+  struct Neko {
+    static constexpr auto value = NEKO_NAMESPACE::Object(
+        "text",  &RapidJsonProbe::text,
+        "count", &RapidJsonProbe::count,
+        "note",  &RapidJsonProbe::note
+    );
+  };
+  // clang-format on
+};
+
+struct RapidJsonByteStringProbe {
+  std::string text;
+
+  struct Neko {
+    static constexpr auto value =
+        NEKO_NAMESPACE::Object("text", &RapidJsonByteStringProbe::text);
+  };
+};
+
 } // namespace
+
+TEST(BangumiProtocol, RapidJsonRoundTripsCompactAndIndentedText) {
+  const RapidJsonProbe source{
+      .text = QStringLiteral("原生 QString"),
+      .count = std::numeric_limits<std::int64_t>::max(),
+      .note = std::nullopt,
+  };
+
+  const auto compact = anime_land::bangumi_protocol::encode(source);
+  ASSERT_TRUE(compact);
+  EXPECT_FALSE(compact->contains('\n'));
+  EXPECT_TRUE(compact->contains("\"count\":9223372036854775807"));
+  EXPECT_FALSE(compact->contains("\"note\""));
+
+  const auto indented = anime_land::bangumi_protocol::encode(
+      source, anime_land::bangumi_protocol::JsonFormat::Indented);
+  ASSERT_TRUE(indented);
+  EXPECT_TRUE(indented->contains('\n'));
+
+  RapidJsonProbe decoded;
+  const auto error = anime_land::bangumi_protocol::decode(*compact, decoded);
+  EXPECT_FALSE(error);
+  EXPECT_EQ(decoded.text, source.text);
+  EXPECT_EQ(decoded.count, source.count);
+  EXPECT_FALSE(decoded.note);
+}
+
+TEST(BangumiProtocol, RapidJsonRejectsInvalidUtf8InUnknownFields) {
+  QByteArray input =
+      QByteArrayLiteral(R"json({"text":"valid","count":1,"unknown":")json");
+  input.append(static_cast<char>(0xC3));
+  input.append(QByteArrayLiteral(R"json("})json"));
+
+  RapidJsonProbe decoded{
+      .text = QStringLiteral("unchanged"),
+      .count = 7,
+      .note = QStringLiteral("unchanged"),
+  };
+  const auto error = anime_land::bangumi_protocol::decode(input, decoded);
+
+  ASSERT_TRUE(error);
+  EXPECT_EQ(decoded.text, QStringLiteral("unchanged"));
+  EXPECT_EQ(decoded.count, 7);
+  ASSERT_TRUE(decoded.note);
+  EXPECT_EQ(*decoded.note, QStringLiteral("unchanged"));
+}
+
+TEST(BangumiProtocol, RapidJsonRejectsInvalidUtf8OnOutput) {
+  RapidJsonByteStringProbe source;
+  source.text.push_back(static_cast<char>(0xC3));
+
+  EXPECT_FALSE(anime_land::bangumi_protocol::encode(source));
+}
 
 TEST(BangumiAuthFoundation, BuildsAuthorizationUrlWithStateAndRedirect) {
   BangumiSettings settings;
@@ -456,17 +536,17 @@ TEST(BangumiHttpRequest, MaterializesTypedHeadersAndFormBody) {
       .url = QUrl(QStringLiteral("https://bgm.tv/oauth/access_token")),
       .headers = {.userAgent = QStringLiteral("anime-land/test"),
                   .bearerToken = QStringLiteral("token"),
-                  .contentType = QByteArrayLiteral(
-                      "application/x-www-form-urlencoded")},
+                  .contentType =
+                      QByteArrayLiteral("application/x-www-form-urlencoded")},
       .body = exchange.toFormData(),
   };
 
   const QNetworkRequest request = value.toQt();
-  const QHttpHeaders headers = request.headers();
-  EXPECT_EQ(headers.value(QHttpHeaders::WellKnownHeader::Accept),
-            QByteArrayView("application/json"));
-  EXPECT_EQ(headers.value(QHttpHeaders::WellKnownHeader::Authorization),
-            QByteArrayView("Bearer token"));
+  EXPECT_EQ(request.rawHeader(QByteArrayLiteral("Accept")),
+            QByteArrayLiteral("application/json"));
+  EXPECT_EQ(request.rawHeader(QByteArrayLiteral("Authorization")),
+            QByteArrayLiteral("Bearer token"));
+  EXPECT_EQ(request.transferTimeout(), 30'000);
   EXPECT_TRUE(value.body.contains("client_id=client%20id"));
   EXPECT_TRUE(value.body.contains("client_secret=secret%26value"));
 }

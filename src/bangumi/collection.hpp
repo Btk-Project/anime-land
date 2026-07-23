@@ -15,21 +15,22 @@
 #include <vector>
 
 namespace anime_land {
+using namespace NEKO_NAMESPACE;
 
 enum class BangumiSubjectType : int {
-  Book = 1,
-  Anime = 2,
-  Music = 3,
-  Game = 4,
-  Real = 6,
+    Book = 1,
+    Anime = 2,
+    Music = 3,
+    Game = 4,
+    Real = 6,
 };
 
 enum class BangumiCollectionType : int {
-  Wish = 1,
-  Done = 2,
-  Doing = 3,
-  OnHold = 4,
-  Dropped = 5,
+    Wish = 1,
+    Done = 2,
+    Doing = 3,
+    OnHold = 4,
+    Dropped = 5,
 };
 
 /**
@@ -39,15 +40,15 @@ enum class BangumiCollectionType : int {
  */
 constexpr auto isValidBangumiSubjectType(BangumiSubjectType type) noexcept
     -> bool {
-  switch (type) {
-  case BangumiSubjectType::Book:
-  case BangumiSubjectType::Anime:
-  case BangumiSubjectType::Music:
-  case BangumiSubjectType::Game:
-  case BangumiSubjectType::Real:
-    return true;
-  }
-  return false;
+    switch (type) {
+        case BangumiSubjectType::Book:
+        case BangumiSubjectType::Anime:
+        case BangumiSubjectType::Music:
+        case BangumiSubjectType::Game:
+        case BangumiSubjectType::Real:
+            return true;
+    }
+    return false;
 }
 
 /**
@@ -57,22 +58,22 @@ constexpr auto isValidBangumiSubjectType(BangumiSubjectType type) noexcept
  */
 constexpr auto isValidBangumiCollectionType(BangumiCollectionType type) noexcept
     -> bool {
-  switch (type) {
-  case BangumiCollectionType::Wish:
-  case BangumiCollectionType::Done:
-  case BangumiCollectionType::Doing:
-  case BangumiCollectionType::OnHold:
-  case BangumiCollectionType::Dropped:
-    return true;
-  }
-  return false;
+    switch (type) {
+        case BangumiCollectionType::Wish:
+        case BangumiCollectionType::Done:
+        case BangumiCollectionType::Doing:
+        case BangumiCollectionType::OnHold:
+        case BangumiCollectionType::Dropped:
+            return true;
+    }
+    return false;
 }
 
 struct BangumiCollectionQuery {
-  std::optional<BangumiSubjectType> subjectType;
-  std::optional<BangumiCollectionType> collectionType;
-  int limit = 30;
-  int offset = 0;
+    std::optional<BangumiSubjectType> subjectType;
+    std::optional<BangumiCollectionType> collectionType;
+    int limit = 30;
+    int offset = 0;
 };
 
 /**
@@ -81,19 +82,23 @@ struct BangumiCollectionQuery {
  * @post 成功后该对象可直接交给业务层，无额外协议 DTO。
  */
 struct BangumiSubjectImages {
-  QString large;
-  QString common;
-  QString medium;
-  QString small;
-  QString grid;
+    QString large;
+    QString common;
+    QString medium;
+    QString small;
+    QString grid;
 
+    // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "large", &BangumiSubjectImages::large, "common",
-        &BangumiSubjectImages::common, "medium", &BangumiSubjectImages::medium,
-        "small", &BangumiSubjectImages::small, "grid",
-        &BangumiSubjectImages::grid);
+    static constexpr auto value = Object(
+        "large",  &BangumiSubjectImages::large,
+        "common", &BangumiSubjectImages::common,
+        "medium", &BangumiSubjectImages::medium,
+        "small",  &BangumiSubjectImages::small,
+        "grid",   &BangumiSubjectImages::grid
+    );
   };
+    // clang-format on
 };
 
 /**
@@ -102,17 +107,19 @@ struct BangumiSubjectImages {
  * @post 成功验证后 count 和 totalCount 均为非负。
  */
 struct BangumiSubjectTag {
-  QString name;
-  int count = 0;
-  int totalCount = 0;
+    QString name;
+    int count = 0;
+    int totalCount = 0;
 
+    // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "name", &BangumiSubjectTag::name, "count", &BangumiSubjectTag::count,
-        "totalCount",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"total_cont">>(
-            &BangumiSubjectTag::totalCount));
+    static constexpr auto value = Object(
+        "name",       &BangumiSubjectTag::name,
+        "count",      &BangumiSubjectTag::count,
+        "totalCount", make_tags<rename_tag<"total_cont">>(&BangumiSubjectTag::totalCount)
+    );
   };
+    // clang-format on
 };
 
 /**
@@ -121,44 +128,39 @@ struct BangumiSubjectTag {
  * @post date 保留协议的 missing/null 语义，不规范化为空字符串。
  */
 struct BangumiCollectionSubject {
-  std::int64_t id = 0;
-  BangumiSubjectType type = BangumiSubjectType::Anime;
-  QString name;
-  QString nameCn;
-  QString shortSummary;
-  std::optional<QString> date;
-  BangumiSubjectImages images;
-  int volumes = 0;
-  int episodes = 0;
-  int collectionTotal = 0;
-  double score = 0;
-  int rank = 0;
-  std::vector<BangumiSubjectTag> tags;
+    std::int64_t id = 0;
+    BangumiSubjectType type = BangumiSubjectType::Anime;
+    QString name;
+    QString nameCn;
+    QString shortSummary;
+    std::optional<QString> date;
+    BangumiSubjectImages images;
+    int volumes = 0;
+    int episodes = 0;
+    int collectionTotal = 0;
+    double score = 0;
+    int rank = 0;
+    std::vector<BangumiSubjectTag> tags;
 
+    // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "id", &BangumiCollectionSubject::id, "type",
-        &BangumiCollectionSubject::type, "name", &BangumiCollectionSubject::name,
-        "nameCn",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"name_cn">>(
-            &BangumiCollectionSubject::nameCn),
-        "shortSummary",
-        NEKO_NAMESPACE::make_tags<
-            NEKO_NAMESPACE::rename_tag<"short_summary">>(
-            &BangumiCollectionSubject::shortSummary),
-        "date", &BangumiCollectionSubject::date, "images",
-        &BangumiCollectionSubject::images, "volumes",
-        &BangumiCollectionSubject::volumes, "episodes",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"eps">>(
-            &BangumiCollectionSubject::episodes),
-        "collectionTotal",
-        NEKO_NAMESPACE::make_tags<
-            NEKO_NAMESPACE::rename_tag<"collection_total">>(
-            &BangumiCollectionSubject::collectionTotal),
-        "score", &BangumiCollectionSubject::score, "rank",
-        &BangumiCollectionSubject::rank, "tags",
-        &BangumiCollectionSubject::tags);
+    static constexpr auto value = Object(
+        "id",              &BangumiCollectionSubject::id,
+        "type",            &BangumiCollectionSubject::type,
+        "name",            &BangumiCollectionSubject::name,
+        "nameCn",          make_tags<rename_tag<"name_cn">>(&BangumiCollectionSubject::nameCn),
+        "shortSummary",    make_tags<rename_tag<"short_summary">>(&BangumiCollectionSubject::shortSummary),
+        "date",            &BangumiCollectionSubject::date,
+        "images",          &BangumiCollectionSubject::images,
+        "volumes",         &BangumiCollectionSubject::volumes,
+        "episodes",        make_tags<rename_tag<"eps">>(&BangumiCollectionSubject::episodes),
+        "collectionTotal", make_tags<rename_tag<"collection_total">>(&BangumiCollectionSubject::collectionTotal),
+        "score",           &BangumiCollectionSubject::score,
+        "rank",            &BangumiCollectionSubject::rank,
+        "tags",            &BangumiCollectionSubject::tags
+    );
   };
+    // clang-format on
 };
 
 /**
@@ -167,45 +169,35 @@ struct BangumiCollectionSubject {
  * @post comment/subject 保留 optional 语义，不需要第二套 wire DTO。
  */
 struct BangumiUserCollection {
-  std::int64_t subjectId = 0;
-  BangumiSubjectType subjectType = BangumiSubjectType::Anime;
-  int rate = 0;
-  BangumiCollectionType collectionType = BangumiCollectionType::Wish;
-  std::optional<QString> comment;
-  std::vector<QString> tags;
-  int episodeStatus = 0;
-  int volumeStatus = 0;
-  QString updatedAt;
-  bool isPrivate = false;
-  std::optional<BangumiCollectionSubject> subject;
+    std::int64_t subjectId = 0;
+    BangumiSubjectType subjectType = BangumiSubjectType::Anime;
+    int rate = 0;
+    BangumiCollectionType collectionType = BangumiCollectionType::Wish;
+    std::optional<QString> comment;
+    std::vector<QString> tags;
+    int episodeStatus = 0;
+    int volumeStatus = 0;
+    QString updatedAt;
+    bool isPrivate = false;
+    std::optional<BangumiCollectionSubject> subject;
 
+    // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "subjectId",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"subject_id">>(
-            &BangumiUserCollection::subjectId),
-        "subjectType",
-        NEKO_NAMESPACE::make_tags<
-            NEKO_NAMESPACE::rename_tag<"subject_type">>(
-            &BangumiUserCollection::subjectType),
-        "rate", &BangumiUserCollection::rate, "collectionType",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"type">>(
-            &BangumiUserCollection::collectionType),
-        "comment", &BangumiUserCollection::comment, "tags",
-        &BangumiUserCollection::tags, "episodeStatus",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"ep_status">>(
-            &BangumiUserCollection::episodeStatus),
-        "volumeStatus",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"vol_status">>(
-            &BangumiUserCollection::volumeStatus),
-        "updatedAt",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"updated_at">>(
-            &BangumiUserCollection::updatedAt),
-        "isPrivate",
-        NEKO_NAMESPACE::make_tags<NEKO_NAMESPACE::rename_tag<"private">>(
-            &BangumiUserCollection::isPrivate),
-        "subject", &BangumiUserCollection::subject);
+    static constexpr auto value = Object(
+        "subjectId",      make_tags<rename_tag<"subject_id">>(&BangumiUserCollection::subjectId),
+        "subjectType",    make_tags<rename_tag<"subject_type">>(&BangumiUserCollection::subjectType),
+        "rate",           &BangumiUserCollection::rate,
+        "collectionType", make_tags<rename_tag<"type">>(&BangumiUserCollection::collectionType),
+        "comment",        &BangumiUserCollection::comment,
+        "tags",           &BangumiUserCollection::tags,
+        "episodeStatus",  make_tags<rename_tag<"ep_status">>(&BangumiUserCollection::episodeStatus),
+        "volumeStatus",   make_tags<rename_tag<"vol_status">>(&BangumiUserCollection::volumeStatus),
+        "updatedAt",      make_tags<rename_tag<"updated_at">>(&BangumiUserCollection::updatedAt),
+        "isPrivate",      make_tags<rename_tag<"private">>(&BangumiUserCollection::isPrivate),
+        "subject",        &BangumiUserCollection::subject
+    );
   };
+    // clang-format on
 };
 
 /**
@@ -214,18 +206,21 @@ struct BangumiUserCollection {
  * @post 只有整页和所有嵌套条目均有效时才从解析函数返回。
  */
 struct BangumiUserCollectionPage {
-  int total = 0;
-  int limit = 0;
-  int offset = 0;
-  std::vector<BangumiUserCollection> data;
+    int total = 0;
+    int limit = 0;
+    int offset = 0;
+    std::vector<BangumiUserCollection> data;
 
+    // clang-format off
   struct Neko {
-    static constexpr auto value = NEKO_NAMESPACE::Object(
-        "total", &BangumiUserCollectionPage::total, "limit",
-        &BangumiUserCollectionPage::limit, "offset",
-        &BangumiUserCollectionPage::offset, "data",
-        &BangumiUserCollectionPage::data);
+    static constexpr auto value = Object(
+        "total",  &BangumiUserCollectionPage::total,
+        "limit",  &BangumiUserCollectionPage::limit,
+        "offset", &BangumiUserCollectionPage::offset,
+        "data",   &BangumiUserCollectionPage::data
+    );
   };
+    // clang-format on
 };
 
 using BangumiUserCollectionsResponse =
@@ -235,7 +230,7 @@ using BangumiUserCollectionsResponse =
  * @brief 把已验证的领域分页对象编码为 Bangumi wire body。
  * @pre page 及所有子对象满足字段范围，所有浮点值有限。
  * @return 完整 UTF-8 body；后端拒绝某字段时返回空 QByteArray。
- * @post 不修改 page，不向调用方暴露 QJsonObject/QJsonValue。
+ * @post 不修改 page，不向调用方暴露 JSON DOM。
  */
 auto encodeBangumiUserCollectionPage(const BangumiUserCollectionPage &page)
     -> QByteArray;
@@ -272,47 +267,48 @@ NEKO_BEGIN_NAMESPACE
  * @pre wire 值必须是整数 1、2、3、4 或 6。
  * @post 无效整数返回 InvalidType，目标枚举保持不变。
  */
-template <> struct CustomParser<anime_land::BangumiSubjectType> {
-  /**
+template <>
+struct CustomParser<anime_land::BangumiSubjectType> {
+    /**
    * @brief 把有效枚举写成官方 numeric wire 值。
    * @pre value 必须属于 isValidBangumiSubjectType() 集合。
    * @post 无效值返回 InvalidType，writer 不应被视为成功。
    */
-  template <typename W, typename Parent, typename Tags>
-  static auto write(W &writer, anime_land::BangumiSubjectType value,
-                    const Parent &parent, const Tags &tags) -> ParserResult {
-    if (!anime_land::isValidBangumiSubjectType(value)) {
-      return detail::parser_error(sa::ErrorCode::InvalidType,
-                                  "Invalid Bangumi subject type");
+    template <typename W, typename Parent, typename Tags>
+    static auto write(W &writer, anime_land::BangumiSubjectType value,
+                      const Parent &parent, const Tags &tags) -> ParserResult {
+        if (!anime_land::isValidBangumiSubjectType(value)) {
+            return detail::parser_error(sa::ErrorCode::InvalidType,
+                                        "Invalid Bangumi subject type");
+        }
+        return parser_write<W>(writer, static_cast<int>(value), parent, tags);
     }
-    return parser_write<W>(writer, static_cast<int>(value), parent, tags);
-  }
 
-  /**
+    /**
    * @brief 从 numeric wire 值严格读取 subject type。
    * @pre input 必须能无损读取为 int。
    * @post 仅在取值合法时提交 value；失败保持 value 不变。
    */
-  template <typename R, typename Tags>
-  static auto read(typename R::InputValueType input,
-                   anime_land::BangumiSubjectType &value, const Tags &tags)
-      -> ParserResult {
-    int raw = 0;
-    auto result = parser_read<R>(input, raw, tags);
-    const auto parsed = static_cast<anime_land::BangumiSubjectType>(raw);
-    if (!result || !anime_land::isValidBangumiSubjectType(parsed)) {
-      return result ? detail::parser_error(sa::ErrorCode::InvalidType,
-                                           "Invalid Bangumi subject type")
-                    : result;
+    template <typename R, typename Tags>
+    static auto read(typename R::InputValueType input,
+                     anime_land::BangumiSubjectType &value, const Tags &tags)
+        -> ParserResult {
+        int raw = 0;
+        auto result = parser_read<R>(input, raw, tags);
+        const auto parsed = static_cast<anime_land::BangumiSubjectType>(raw);
+        if (!result || !anime_land::isValidBangumiSubjectType(parsed)) {
+            return result ? detail::parser_error(sa::ErrorCode::InvalidType,
+                                                 "Invalid Bangumi subject type")
+                          : result;
+        }
+        value = parsed;
+        return sa::success();
     }
-    value = parsed;
-    return sa::success();
-  }
 
-  /** @brief 声明 numeric enum 的基础 schema 为 integer。 */
-  static auto toSchema() -> parsing::schema::Type {
-    return parser_schema<int>();
-  }
+    /** @brief 声明 numeric enum 的基础 schema 为 integer。 */
+    static auto toSchema() -> parsing::schema::Type {
+        return parser_schema<int>();
+    }
 };
 
 /**
@@ -320,47 +316,48 @@ template <> struct CustomParser<anime_land::BangumiSubjectType> {
  * @pre wire 值必须是整数 1..5。
  * @post 无效整数返回 InvalidType，目标枚举保持不变。
  */
-template <> struct CustomParser<anime_land::BangumiCollectionType> {
-  /**
+template <>
+struct CustomParser<anime_land::BangumiCollectionType> {
+    /**
    * @brief 把有效枚举写成官方 numeric wire 值。
    * @pre value 必须属于 isValidBangumiCollectionType() 集合。
    * @post 无效值返回 InvalidType，writer 不应被视为成功。
    */
-  template <typename W, typename Parent, typename Tags>
-  static auto write(W &writer, anime_land::BangumiCollectionType value,
-                    const Parent &parent, const Tags &tags) -> ParserResult {
-    if (!anime_land::isValidBangumiCollectionType(value)) {
-      return detail::parser_error(sa::ErrorCode::InvalidType,
-                                  "Invalid Bangumi collection type");
+    template <typename W, typename Parent, typename Tags>
+    static auto write(W &writer, anime_land::BangumiCollectionType value,
+                      const Parent &parent, const Tags &tags) -> ParserResult {
+        if (!anime_land::isValidBangumiCollectionType(value)) {
+            return detail::parser_error(sa::ErrorCode::InvalidType,
+                                        "Invalid Bangumi collection type");
+        }
+        return parser_write<W>(writer, static_cast<int>(value), parent, tags);
     }
-    return parser_write<W>(writer, static_cast<int>(value), parent, tags);
-  }
 
-  /**
+    /**
    * @brief 从 numeric wire 值严格读取 collection type。
    * @pre input 必须能无损读取为 int。
    * @post 仅在取值合法时提交 value；失败保持 value 不变。
    */
-  template <typename R, typename Tags>
-  static auto read(typename R::InputValueType input,
-                   anime_land::BangumiCollectionType &value, const Tags &tags)
-      -> ParserResult {
-    int raw = 0;
-    auto result = parser_read<R>(input, raw, tags);
-    const auto parsed = static_cast<anime_land::BangumiCollectionType>(raw);
-    if (!result || !anime_land::isValidBangumiCollectionType(parsed)) {
-      return result ? detail::parser_error(sa::ErrorCode::InvalidType,
-                                           "Invalid Bangumi collection type")
-                    : result;
+    template <typename R, typename Tags>
+    static auto read(typename R::InputValueType input,
+                     anime_land::BangumiCollectionType &value, const Tags &tags)
+        -> ParserResult {
+        int raw = 0;
+        auto result = parser_read<R>(input, raw, tags);
+        const auto parsed = static_cast<anime_land::BangumiCollectionType>(raw);
+        if (!result || !anime_land::isValidBangumiCollectionType(parsed)) {
+            return result ? detail::parser_error(sa::ErrorCode::InvalidType,
+                                                 "Invalid Bangumi collection type")
+                          : result;
+        }
+        value = parsed;
+        return sa::success();
     }
-    value = parsed;
-    return sa::success();
-  }
 
-  /** @brief 声明 numeric enum 的基础 schema 为 integer。 */
-  static auto toSchema() -> parsing::schema::Type {
-    return parser_schema<int>();
-  }
+    /** @brief 声明 numeric enum 的基础 schema 为 integer。 */
+    static auto toSchema() -> parsing::schema::Type {
+        return parser_schema<int>();
+    }
 };
 
 NEKO_END_NAMESPACE

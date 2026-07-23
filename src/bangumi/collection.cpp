@@ -79,14 +79,14 @@ auto bangumiUserCollectionsFeature() -> BangumiFeatureDeclaration {
  * @brief 编码已验证的用户收藏分页对象。
  * @pre page 及其全部子对象满足 Bangumi 领域约束，浮点数必须有限。
  * @return 缩进格式的完整 UTF-8 body；编码失败返回空 QByteArray。
- * @post 不修改 page，且业务调用方不需要操作 QJsonDocument。
+ * @post 不修改 page，且业务调用方不需要操作 JSON DOM。
  */
 auto encodeBangumiUserCollectionPage(const BangumiUserCollectionPage &page)
     -> QByteArray {
   if (!isValidPage(page)) {
     return {};
   }
-  return bangumi_protocol::encode(page, QJsonDocument::Indented)
+  return bangumi_protocol::encode(page, bangumi_protocol::JsonFormat::Indented)
       .value_or(QByteArray{});
 }
 

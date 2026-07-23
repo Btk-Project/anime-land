@@ -55,13 +55,13 @@ struct SqlSettings {
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-      "database_type",      &SqlSettings::database_type,
-      "database_password",  &SqlSettings::database_password,
-      "database_host",      make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_host),
-      "database_port",      make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_port),
-      "database_user",      make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_user),
-      "database_name",      make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_name),
-      "database_path",      make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_path)
+        "database_type",     &SqlSettings::database_type,
+        "database_password", &SqlSettings::database_password,
+        "database_host",     make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_host),
+        "database_port",     make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_port),
+        "database_user",     make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_user),
+        "database_name",     make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_name),
+        "database_path",     make_tags<ParserTag{.skippable = true}>(&SqlSettings::database_path)
     );
   };
   // clang-format on

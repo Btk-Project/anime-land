@@ -15,6 +15,11 @@ function stdcxx() return "c++" .. tostring(get_config("stdcxx")) end
 
 set_languages(stdc(), stdcxx())
 
+-- RapidJSON defaults do not validate same-encoding UTF-8 on input/output.
+-- Keep protocol strings strict at the application boundary.
+add_defines("RAPIDJSON_PARSE_DEFAULT_FLAGS=kParseValidateEncodingFlag",
+            "RAPIDJSON_WRITE_DEFAULT_FLAGS=kWriteValidateEncodingFlag")
+
 add_configfiles("src/common/config.h.in")
 set_configdir("src/common")
 includes("lua/check")
@@ -71,7 +76,7 @@ end
 -- MARK: add requirements
 add_requires("ilias", "libsodium", "neko-proto-tools", "ilias-sql")
 if not is_plat("linux") then
-    add_requires("qt6quick")
+    add_requires("qt6quick >=6.2.0")
 end
 
 add_requireconfs("**ilias", {
@@ -88,7 +93,7 @@ add_requireconfs("**libsodium", {
 })
 
 add_requireconfs("**neko-proto-tools", {
-    version = "x.x.x", -- 使用最新版本
+    version = "dev", -- 使用最新版本
     override = true, -- 强制覆盖
     configs = {shared = true,
                stdcxx = tonumber(get_config("stdcxx")),
@@ -105,7 +110,7 @@ add_requireconfs("**neko-proto-tools", {
 })
 
 add_requireconfs("**ilias-sql", {
-    version = "x.x.x", -- 使用最新版本
+    version = "dev", -- 使用最新版本
     override = true, -- 强制覆盖
     configs = {shared = true,
                stdcxx = tonumber(get_config("stdcxx")),

@@ -8,6 +8,8 @@
  */
 #pragma once
 
+#include "common/qt_version.hpp"
+
 #include <QByteArray>
 #include <QString>
 #include <QStringConverter>

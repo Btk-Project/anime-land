@@ -8,14 +8,17 @@
  */
 #pragma once
 
+#include "common/qt_version.hpp"
+
 #include <QByteArray>
-#include <QHttpHeaders>
 #include <QNetworkRequest>
 #include <QString>
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <algorithm>
 #include <chrono>
+#include <limits>
 #include <optional>
 
 namespace anime_land {
@@ -38,23 +41,22 @@ struct BangumiRequestHeaders {
   std::optional<QByteArray> contentType;
 
   /**
-   * @brief 物化为 Qt 的 header 容器。
+   * @brief 把 header 物化到 Qt 请求。
    * @pre 成员满足本类说明中的 header 合法性条件。
-   * @return 与本对象等价、拥有自身数据的 QHttpHeaders。
-   * @post 不修改本对象；bearer token 被精确添加一次 "Bearer " 前缀。
+   * @post 不修改本对象；覆盖 request 中的同名 header，bearer token 被精确
+   * 添加一次 "Bearer " 前缀。
    */
-  auto toQt() const -> QHttpHeaders {
-    QHttpHeaders headers;
-    headers.append(QHttpHeaders::WellKnownHeader::Accept, accept);
-    headers.append(QHttpHeaders::WellKnownHeader::UserAgent, userAgent);
+  void applyTo(QNetworkRequest &request) const {
+    request.setRawHeader(QByteArrayLiteral("Accept"), accept);
+    request.setRawHeader(QByteArrayLiteral("User-Agent"), userAgent.toUtf8());
     if (bearerToken) {
-      headers.append(QHttpHeaders::WellKnownHeader::Authorization,
-                     QStringLiteral("Bearer %1").arg(*bearerToken));
+      request.setRawHeader(
+          QByteArrayLiteral("Authorization"),
+          QStringLiteral("Bearer %1").arg(*bearerToken).toUtf8());
     }
     if (contentType) {
-      headers.append(QHttpHeaders::WellKnownHeader::ContentType, *contentType);
+      request.setRawHeader(QByteArrayLiteral("Content-Type"), *contentType);
     }
-    return headers;
   }
 };
 
@@ -82,8 +84,12 @@ struct BangumiHttpRequest {
    */
   auto toQt() const -> QNetworkRequest {
     QNetworkRequest request(url);
-    request.setHeaders(headers.toQt());
-    request.setTransferTimeout(timeout);
+    headers.applyTo(request);
+    using TimeoutRep = std::chrono::milliseconds::rep;
+    const TimeoutRep milliseconds =
+        std::clamp(timeout.count(), TimeoutRep{1},
+                   static_cast<TimeoutRep>(std::numeric_limits<int>::max()));
+    request.setTransferTimeout(static_cast<int>(milliseconds));
     return request;
   }
 };

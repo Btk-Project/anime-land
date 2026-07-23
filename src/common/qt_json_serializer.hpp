@@ -50,6 +50,85 @@
 
 NEKO_BEGIN_NAMESPACE
 
+namespace qt_json_detail {
+
+/**
+ * @brief 用 Qt 6.2 起可用的 QJsonDocument API 编码任意 JSON 根值。
+ * @pre value 不能是 QJsonValue::Undefined。
+ * @post object/array 保留请求的格式；标量输出不带辅助 array 包装。
+ */
+inline auto serialize(const QJsonValue &value, QJsonDocument::JsonFormat format)
+    -> QByteArray {
+  if (value.isObject()) {
+    return QJsonDocument(value.toObject()).toJson(format);
+  }
+  if (value.isArray()) {
+    return QJsonDocument(value.toArray()).toJson(format);
+  }
+
+  QJsonArray wrapper;
+  wrapper.append(value);
+  const QByteArray wrapped =
+      QJsonDocument(std::move(wrapper)).toJson(QJsonDocument::Compact);
+  return wrapped.mid(1, wrapped.size() - 2);
+}
+
+/**
+ * @brief 用 Qt 6.2 起可用的 QJsonDocument API 解析任意 JSON 根值。
+ * @pre bytes 的存储在调用期间有效。
+ * @post 成功时 value 接收唯一根节点；辅助 array 不暴露给调用方。
+ */
+inline auto parse(QByteArrayView bytes, QJsonValue &value) -> ParserResult {
+  if (bytes.size() > std::numeric_limits<qsizetype>::max() - 2) {
+    return sa::error(sa::ErrorCode::InvalidLength,
+                     "Qt JSON input is too large");
+  }
+
+  QByteArray wrapped;
+  wrapped.reserve(bytes.size() + 2);
+  wrapped.append('[');
+  wrapped.append(bytes.data(), bytes.size());
+  wrapped.append(']');
+
+  QJsonParseError error;
+  const QJsonDocument document = QJsonDocument::fromJson(wrapped, &error);
+  if (error.error != QJsonParseError::NoError) {
+    const qsizetype offset = error.offset > 0 ? error.offset - 1 : 0;
+    return sa::error(sa::ErrorCode::ParseError,
+                     "Qt JSON parse error at offset " + std::to_string(offset) +
+                         ": " + error.errorString().toStdString());
+  }
+
+  const QJsonArray roots = document.array();
+  if (roots.size() != 1) {
+    return sa::error(sa::ErrorCode::ParseError,
+                     "Qt JSON input must contain exactly one root value");
+  }
+  value = roots.at(0);
+  return sa::success();
+}
+
+/**
+ * @brief 把 QJsonDocument 的 object/array 根提升为 QJsonValue。
+ * @pre document 必须包含 object 或 array；Qt 空 document 不被接受。
+ * @post 成功时 value 与 document 隐式共享不可变数据。
+ */
+inline auto valueFromDocument(const QJsonDocument &document, QJsonValue &value)
+    -> ParserResult {
+  if (document.isObject()) {
+    value = document.object();
+    return sa::success();
+  }
+  if (document.isArray()) {
+    value = document.array();
+    return sa::success();
+  }
+  return sa::error(sa::ErrorCode::InvalidType,
+                   "QJsonDocument does not contain an object or array root");
+}
+
+} // namespace qt_json_detail
+
 namespace qtjson {
 
 /**
@@ -159,15 +238,16 @@ struct Reader {
    * @return 原始 JSON 文本；undefined 返回 InvalidType。
    * @post 不修改 value。
    */
-    static auto toRawString(const InputValueType &value)
-        -> sa::Result<std::string> {
-        if (value.isUndefined()) {
-            return sa::error(sa::ErrorCode::InvalidType,
-                             "Cannot serialize an undefined QJsonValue");
-        }
-        const QByteArray json = value.toJson(QJsonDocument::Compact);
-        return std::string(json.constData(), static_cast<std::size_t>(json.size()));
+  static auto toRawString(const InputValueType &value)
+      -> sa::Result<std::string> {
+    if (value.isUndefined()) {
+      return sa::error(sa::ErrorCode::InvalidType,
+                       "Cannot serialize an undefined QJsonValue");
     }
+    const QByteArray json =
+        qt_json_detail::serialize(value, QJsonDocument::Compact);
+    return std::string(json.constData(), static_cast<std::size_t>(json.size()));
+  }
 
     /**
    * @brief 走 Qt 原生路径读取 QString，避免 UTF-8 中间 std::string。
@@ -362,18 +442,16 @@ public:
    * @return 解析成功返回 true；长度、语法或尾随内容非法返回 false。
    * @post 失败时不得使用 value 的内容。
    */
-    static auto parseRawValue(std::string_view text, RawValueType &value)
-        -> bool {
-        if (text.size() >
-            static_cast<std::size_t>(std::numeric_limits<qsizetype>::max())) {
-            return false;
-        }
-        QJsonParseError error;
-        value = QJsonValue::fromJson(
-            QByteArrayView(text.data(), static_cast<qsizetype>(text.size())),
-            &error);
-        return error.error == QJsonParseError::NoError;
+  static auto parseRawValue(std::string_view text, RawValueType &value)
+      -> bool {
+    if (text.size() >
+        static_cast<std::size_t>(std::numeric_limits<qsizetype>::max())) {
+      return false;
     }
+    return static_cast<bool>(qt_json_detail::parse(
+        QByteArrayView(text.data(), static_cast<qsizetype>(text.size())),
+        value));
+  }
 
     /**
    * @brief 返回当前完整根节点。
@@ -703,42 +781,6 @@ private:
 
 namespace qt_json_detail {
 
-/**
- * @brief 解析一个完整 UTF-8 JSON 根值。
- * @pre bytes 的存储在调用期间有效，且长度可由 qsizetype 表示。
- * @post 成功时 value 接收根节点；失败时返回包含 byte offset 的 ParseError。
- */
-inline auto parse(QByteArrayView bytes, QJsonValue &value) -> ParserResult {
-    QJsonParseError error;
-    value = QJsonValue::fromJson(bytes, &error);
-    if (error.error != QJsonParseError::NoError) {
-        return sa::error(sa::ErrorCode::ParseError,
-                         "Qt JSON parse error at offset " +
-                             std::to_string(error.offset) + ": " +
-                             error.errorString().toStdString());
-    }
-    return sa::success();
-}
-
-/**
- * @brief 把 QJsonDocument 的 object/array 根提升为 QJsonValue。
- * @pre document 必须包含 object 或 array；Qt 空 document 不被接受。
- * @post 成功时 value 与 document 隐式共享不可变数据。
- */
-inline auto valueFromDocument(const QJsonDocument &document,
-                              QJsonValue &value) -> ParserResult {
-    if (document.isObject()) {
-        value = document.object();
-        return sa::success();
-    }
-    if (document.isArray()) {
-        value = document.array();
-        return sa::success();
-    }
-    return sa::error(sa::ErrorCode::InvalidType,
-                     "QJsonDocument does not contain an object or array root");
-}
-
 template <typename>
 inline constexpr bool SupportedOutput = false;
 template <>
@@ -921,41 +963,36 @@ struct QtJsonBackend {
    * @pre write() 已成功，且 sink 生命周期仍有效。
    * @post 成功时 sink 被完整覆盖且 flushed=true；重复调用保持幂等。
    */
-    template <typename BufferT>
-    static auto finish(OutputState<BufferT> &state, ParserResult result)
-        -> ParserResult {
-        if (!result || !state.hasRoot || state.flushed) {
-            return result;
-        }
-        const QJsonValue &root = state.writer.root();
-        if constexpr (std::is_same_v<BufferT, QJsonDocument>) {
-            if (root.isObject()) {
-                state.output = QJsonDocument(root.toObject());
-            }
-            else if (root.isArray()) {
-                state.output = QJsonDocument(root.toArray());
-            }
-            else {
-                return sa::error(
-                    sa::ErrorCode::InvalidType,
-                    "QJsonDocument output requires an object or array root");
-            }
-        }
-        else if constexpr (std::is_same_v<BufferT, QJsonValue>) {
-            state.output = root;
-        }
-        else {
-            const QByteArray bytes = root.toJson(state.format);
-            if constexpr (std::is_same_v<BufferT, QByteArray>) {
-                state.output = bytes;
-            }
-            else {
-                state.output = QString::fromUtf8(bytes);
-            }
-        }
-        state.flushed = true;
-        return result;
+  template <typename BufferT>
+  static auto finish(OutputState<BufferT> &state, ParserResult result)
+      -> ParserResult {
+    if (!result || !state.hasRoot || state.flushed) {
+      return result;
     }
+    const QJsonValue &root = state.writer.root();
+    if constexpr (std::is_same_v<BufferT, QJsonDocument>) {
+      if (root.isObject()) {
+        state.output = QJsonDocument(root.toObject());
+      } else if (root.isArray()) {
+        state.output = QJsonDocument(root.toArray());
+      } else {
+        return sa::error(
+            sa::ErrorCode::InvalidType,
+            "QJsonDocument output requires an object or array root");
+      }
+    } else if constexpr (std::is_same_v<BufferT, QJsonValue>) {
+      state.output = root;
+    } else {
+      const QByteArray bytes = qt_json_detail::serialize(root, state.format);
+      if constexpr (std::is_same_v<BufferT, QByteArray>) {
+        state.output = bytes;
+      } else {
+        state.output = QString::fromUtf8(bytes);
+      }
+    }
+    state.flushed = true;
+    return result;
+  }
 
     /**
    * @brief 向 OutputSerializerAdapter 报告是否已有有效根值。
