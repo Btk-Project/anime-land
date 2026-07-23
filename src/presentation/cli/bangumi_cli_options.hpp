@@ -10,79 +10,93 @@ namespace anime_land::cli {
 using namespace NEKO_NAMESPACE;
 using namespace argparser;
 
-struct CredentialStoreOptions {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
-};
-
-struct LoginCommand {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
+struct ConfigFileOptions {
   std::optional<std::string> config;
 
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-        "tokenStore",
-        make_tags<arg_long_name<"token-store">,
-                  arg_choices<"memory", "file", "system">,
-                  arg_help<"credential storage: memory, file, or system (default)">>(&LoginCommand::tokenStore),
-        "tokenFile",
-        make_tags<arg_long_name<"token-file">,
-                  arg_value_name<"PATH">,
-                  arg_help<"credential file path (file store only)">>(&LoginCommand::tokenFile),
         "config",
-        make_tags<arg_value_name<"PATH">,
-                  arg_help<"application settings TOML file">>(&LoginCommand::config)
+        make_tags<arg_absolute_name<"config">,
+                  arg_value_name<"PATH">,
+                  arg_help<"application settings TOML file">>(&ConfigFileOptions::config)
+    );
+  };
+  // clang-format on
+};
+
+struct CommonCommandOptions {
+  std::string tokenStore = "system";
+  std::optional<std::string> tokenFile;
+  std::optional<std::string> proxy;
+  std::optional<std::string> logLevel;
+
+  // clang-format off
+  struct Neko {
+    constexpr static auto value = Object(
+        "tokenStore",
+        make_tags<arg_absolute_name<"token-store">,
+                  arg_choices<"memory", "file", "system">,
+                  arg_help<"credential storage: memory, file, or system (default)">>(&CommonCommandOptions::tokenStore),
+        "tokenFile",
+        make_tags<arg_absolute_name<"token-file">,
+                  arg_value_name<"PATH">,
+                  arg_help<"credential file path (file store only)">>(&CommonCommandOptions::tokenFile),
+        "proxy",
+        make_tags<arg_absolute_name<"proxy">,
+                  arg_value_name<"URL">,
+                  arg_help<"override the Bangumi HTTP/SOCKS5 proxy">>(&CommonCommandOptions::proxy),
+        "logLevel",
+        make_tags<arg_absolute_name<"log-level">,
+                  arg_choices<"trace", "debug", "info", "warn", "error", "critical">,
+                  arg_env<"ANIME_LAND_LOG_LEVEL">,
+                  arg_help<"set the application log level">>(&CommonCommandOptions::logLevel)
+    );
+  };
+  // clang-format on
+};
+
+struct LoginCommand {
+  CommonCommandOptions common;
+  ConfigFileOptions settings;
+
+  // clang-format off
+  struct Neko {
+    constexpr static auto value = Object(
+        "common",   &LoginCommand::common,
+        "settings", &LoginCommand::settings
     );
   };
   // clang-format on
 };
 
 struct StatusCommand {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
+  CommonCommandOptions common;
 
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-        "tokenStore",
-        make_tags<arg_long_name<"token-store">,
-                  arg_choices<"memory", "file", "system">,
-                  arg_help<"credential storage: memory, file, or system (default)">>(&StatusCommand::tokenStore),
-        "tokenFile",
-        make_tags<arg_long_name<"token-file">,
-                  arg_value_name<"PATH">,
-                  arg_help<"credential file path (file store only)">>(&StatusCommand::tokenFile)
+        "common", &StatusCommand::common
     );
   };
   // clang-format on
 };
 
 struct LogoutCommand {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
+  CommonCommandOptions common;
 
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-        "tokenStore",
-        make_tags<arg_long_name<"token-store">,
-                  arg_choices<"memory", "file", "system">,
-                  arg_help<"credential storage: memory, file, or system (default)">>(&LogoutCommand::tokenStore),
-        "tokenFile",
-        make_tags<arg_long_name<"token-file">,
-                  arg_value_name<"PATH">,
-                  arg_help<"credential file path (file store only)">>(&LogoutCommand::tokenFile)
+        "common", &LogoutCommand::common
     );
   };
   // clang-format on
 };
 
 struct CollectionsCommand {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
-  std::optional<std::string> config;
+  CommonCommandOptions common;
+  ConfigFileOptions settings;
   std::string subjectType = "all";
   std::string collectionType = "all";
   int limit = 30;
@@ -91,17 +105,8 @@ struct CollectionsCommand {
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-        "tokenStore",
-        make_tags<arg_long_name<"token-store">,
-                  arg_choices<"memory", "file", "system">,
-                  arg_help<"credential storage: memory, file, or system (default)">>(&CollectionsCommand::tokenStore),
-        "tokenFile",
-        make_tags<arg_long_name<"token-file">,
-                  arg_value_name<"PATH">,
-                  arg_help<"credential file path">>(&CollectionsCommand::tokenFile),
-        "config",
-        make_tags<arg_value_name<"PATH">,
-                  arg_help<"application settings TOML file">>(&CollectionsCommand::config),
+        "common",         &CollectionsCommand::common,
+        "settings",       &CollectionsCommand::settings,
         "subjectType",
         make_tags<arg_long_name<"subject-type">,
                   arg_choices<"all", "book", "anime", "music", "game", "real">,

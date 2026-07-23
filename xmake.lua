@@ -57,6 +57,9 @@ end
 
 if has_config("enable_spdlog") then
     add_requires("spdlog")
+else
+    -- Keep QMessageLogContext source locations available in release builds.
+    add_defines("QT_MESSAGELOGCONTEXT")
 end
 
 if is_mode("debug") or is_mode("asan") or is_mode("ubsan") or is_mode("tsan") then

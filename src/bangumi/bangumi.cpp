@@ -1,4 +1,5 @@
 #include "bangumi/bangumi.hpp"
+#include "bangumi/network_proxy.hpp"
 #include "common/log.hpp"
 
 #include <QDateTime>
@@ -37,6 +38,17 @@ BangumiModule::BangumiModule(BangumiSettings settings,
       mNetwork(this), mAuth(mNetwork, mSettings, this),
       mClient(mNetwork, mSettings, this) {
   Q_ASSERT(mTokenStore != nullptr);
+  auto proxyConfigured =
+      detail::configureBangumiNetworkProxy(mNetwork, mSettings);
+  if (!proxyConfigured) {
+    mNetworkConfigurationError = std::move(proxyConfigured.error());
+    AL_LOG_ERROR("[bangumi.network] proxy configuration rejected");
+  } else if (*proxyConfigured) {
+    AL_LOG_INFO("[bangumi.network] custom proxy enabled scheme={}",
+                mSettings.proxy_url.scheme().toStdString());
+  } else {
+    AL_LOG_DEBUG("[bangumi.network] using default proxy policy");
+  }
   QObject::connect(&mAuth, &BangumiAuth::phaseChanged, this,
                    &BangumiModule::onAuthPhaseChanged);
   AL_LOG_INFO("[bangumi.module] initialized features={} oauth_configured={}",
@@ -71,6 +83,9 @@ void BangumiModule::setOAuthApplication(
 auto BangumiModule::restoreSession()
     -> ilias::Task<BangumiResult<BangumiUser>> {
   AL_LOG_INFO("[bangumi.session] restore started");
+  if (mNetworkConfigurationError) {
+    co_return ilias::Err(*mNetworkConfigurationError);
+  }
   if (mState == BangumiLoginState::LoggedIn && mUser) {
     AL_LOG_DEBUG("[bangumi.session] restore reused active session");
     co_return *mUser;
@@ -143,6 +158,9 @@ auto BangumiModule::restoreSession()
 
 auto BangumiModule::login() -> ilias::Task<BangumiResult<BangumiUser>> {
   AL_LOG_INFO("[bangumi.auth] login started");
+  if (mNetworkConfigurationError) {
+    co_return ilias::Err(*mNetworkConfigurationError);
+  }
   if (!isLogout()) {
     AL_LOG_WARN("[bangumi.auth] login rejected state={}",
                 bangumiLoginStateName(mState));
@@ -188,6 +206,9 @@ auto BangumiModule::getCurrentUserCollections(BangumiCollectionQuery query)
     -> ilias::Task<BangumiResult<BangumiUserCollectionsResponse>> {
   AL_LOG_INFO("[bangumi.collections] fetch started limit={} offset={}",
               query.limit, query.offset);
+  if (mNetworkConfigurationError) {
+    co_return ilias::Err(*mNetworkConfigurationError);
+  }
   if (mState != BangumiLoginState::LoggedIn || !mToken || !mUser) {
     AL_LOG_WARN("[bangumi.collections] fetch rejected: not logged in");
     co_return ilias::Err(

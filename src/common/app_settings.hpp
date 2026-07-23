@@ -81,6 +81,11 @@ struct BangumiSettings {
   QString user_agent =
       QStringLiteral("Btk-Project/anime-land/0.0.1 "
                      "(https://github.com/Btk-Project/anime-land)");
+  // Empty keeps QNetworkAccessManager's default proxy policy. Credentials are
+  // separate so the password can use the settings encryption path.
+  QUrl proxy_url{QStringLiteral(""), QUrl::StrictMode};
+  QString proxy_username;
+  std::string proxy_password;
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
@@ -90,7 +95,10 @@ struct BangumiSettings {
         "oauth_base",             &BangumiSettings::oauth_base,
         "oauth_application_page", &BangumiSettings::oauth_application_page,
         "bangumi_api",            &BangumiSettings::bangumi_api,
-        "user_agent",             &BangumiSettings::user_agent
+        "user_agent",             &BangumiSettings::user_agent,
+        "proxy_url",              make_tags<ParserTag{.skippable = true}>(&BangumiSettings::proxy_url),
+        "proxy_username",         make_tags<ParserTag{.skippable = true}>(&BangumiSettings::proxy_username),
+        "proxy_password",         make_tags<ConfigTags{.encrypt = true}, ParserTag{.skippable = true}>(&BangumiSettings::proxy_password)
     );
   };
   // clang-format on

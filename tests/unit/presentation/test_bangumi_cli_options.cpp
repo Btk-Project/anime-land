@@ -5,6 +5,7 @@
 #include "presentation/cli/bangumi_cli_options.hpp"
 
 #include <array>
+#include <string>
 #include <variant>
 
 namespace argparser = NEKO_NAMESPACE::argparser;
@@ -21,11 +22,11 @@ TEST(BangumiCliOptions, ParsesLoginStorageAndConfig) {
   ASSERT_TRUE(result) << result.error().message();
   ASSERT_TRUE(std::holds_alternative<LoginCommand>(*result));
   const auto &command = std::get<LoginCommand>(*result);
-  EXPECT_EQ(command.tokenStore, "file");
-  ASSERT_TRUE(command.tokenFile);
-  EXPECT_EQ(*command.tokenFile, "/tmp/token.json");
-  ASSERT_TRUE(command.config);
-  EXPECT_EQ(*command.config, "/tmp/settings.toml");
+  EXPECT_EQ(command.common.credentials.tokenStore, "file");
+  ASSERT_TRUE(command.common.credentials.tokenFile);
+  EXPECT_EQ(*command.common.credentials.tokenFile, "/tmp/token.json");
+  ASSERT_TRUE(command.settings.config);
+  EXPECT_EQ(*command.settings.config, "/tmp/settings.toml");
 }
 
 TEST(BangumiCliOptions, SystemIsTheSecureDefault) {
@@ -36,7 +37,8 @@ TEST(BangumiCliOptions, SystemIsTheSecureDefault) {
 
   ASSERT_TRUE(result) << result.error().message();
   ASSERT_TRUE(std::holds_alternative<StatusCommand>(*result));
-  EXPECT_EQ(std::get<StatusCommand>(*result).tokenStore, "system");
+  EXPECT_EQ(std::get<StatusCommand>(*result).common.credentials.tokenStore,
+            "system");
 }
 
 TEST(BangumiCliOptions, RejectsUnknownStorageChoice) {
@@ -77,11 +79,11 @@ TEST(BangumiCliOptions, ParsesCollectionsQuery) {
   ASSERT_TRUE(result) << result.error().message();
   ASSERT_TRUE(std::holds_alternative<CollectionsCommand>(*result));
   const auto &command = std::get<CollectionsCommand>(*result);
-  EXPECT_EQ(command.tokenStore, "file");
-  ASSERT_TRUE(command.tokenFile);
-  EXPECT_EQ(*command.tokenFile, "/tmp/token.json");
-  ASSERT_TRUE(command.config);
-  EXPECT_EQ(*command.config, "/tmp/settings.toml");
+  EXPECT_EQ(command.common.credentials.tokenStore, "file");
+  ASSERT_TRUE(command.common.credentials.tokenFile);
+  EXPECT_EQ(*command.common.credentials.tokenFile, "/tmp/token.json");
+  ASSERT_TRUE(command.settings.config);
+  EXPECT_EQ(*command.settings.config, "/tmp/settings.toml");
   EXPECT_EQ(command.subjectType, "anime");
   EXPECT_EQ(command.collectionType, "doing");
   EXPECT_EQ(command.limit, 50);
@@ -97,11 +99,56 @@ TEST(BangumiCliOptions, CollectionsDefaultsToSystemStoreAndFirstPage) {
   ASSERT_TRUE(result) << result.error().message();
   ASSERT_TRUE(std::holds_alternative<CollectionsCommand>(*result));
   const auto &command = std::get<CollectionsCommand>(*result);
-  EXPECT_EQ(command.tokenStore, "system");
+  EXPECT_EQ(command.common.credentials.tokenStore, "system");
   EXPECT_EQ(command.subjectType, "all");
   EXPECT_EQ(command.collectionType, "all");
   EXPECT_EQ(command.limit, 30);
   EXPECT_EQ(command.offset, 0);
+}
+
+TEST(BangumiCliOptions, CommonNestedFieldsKeepAbsoluteCliNames) {
+  const char *argv[] = {"anime-land", "status",
+                        "--common.credentials.tokenStore", "file"};
+
+  auto nested = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(argv)), argv);
+
+  EXPECT_FALSE(nested);
+
+  argparser::ArgParserConfig config;
+  config.programName = "anime-land";
+  const std::string help =
+      argparser::format_help<AnimeLandCommands>(2, argv, config);
+  EXPECT_NE(help.find("--token-store"), std::string::npos);
+  EXPECT_NE(help.find("--token-file"), std::string::npos);
+  EXPECT_NE(help.find("--proxy"), std::string::npos);
+  EXPECT_NE(help.find("--log-level"), std::string::npos);
+  EXPECT_EQ(help.find("--common."), std::string::npos);
+}
+
+TEST(BangumiCliOptions, ParsesProxyAndLogLevelForEveryCommand) {
+  const char *argv[] = {"anime-land", "status", "--proxy",
+                        "socks5://127.0.0.1:1080", "--log-level", "debug"};
+
+  auto result = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(argv)), argv);
+
+  ASSERT_TRUE(result) << result.error().message();
+  ASSERT_TRUE(std::holds_alternative<StatusCommand>(*result));
+  const auto &runtime = std::get<StatusCommand>(*result).common.runtime;
+  ASSERT_TRUE(runtime.proxy);
+  EXPECT_EQ(*runtime.proxy, "socks5://127.0.0.1:1080");
+  ASSERT_TRUE(runtime.logLevel);
+  EXPECT_EQ(*runtime.logLevel, "debug");
+}
+
+TEST(BangumiCliOptions, RejectsUnknownLogLevel) {
+  const char *argv[] = {"anime-land", "login", "--log-level", "verbose"};
+
+  auto result = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(argv)), argv);
+
+  EXPECT_FALSE(result);
 }
 
 #include "../common/common_main.hpp.in"

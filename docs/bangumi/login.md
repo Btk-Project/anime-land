@@ -59,12 +59,24 @@ struct BangumiSettings {
     QUrl oauth_application_page = QUrl("https://bgm.tv/dev/app");
     QUrl bangumi_api = QUrl("https://api.bgm.tv");
     QString user_agent = QStringLiteral("Btk-Project/anime-land/...");
+    QUrl proxy_url = QUrl("", QUrl::StrictMode);
+    QString proxy_username;
+    std::string proxy_password;
 };
 ```
 
 `oauth_base`、开发者页面和 API Base 分开配置，方便测试环境替换，也避免 View 写死链接。
 Qt 字符串和 URL 通过 NekoProtoTools 的 `CustomParser<T>` 扩展序列化；
 `client_secret` 保持字节串，以维持加密与内存擦除路径。
+
+`proxy_url` 为空时保留 Qt 默认代理策略；设置后支持 `http://` 与
+`socks5://`，未写端口时分别使用 80 与 1080。需要认证时使用独立的
+`proxy_username`、`proxy_password` 字段，不要把凭据写进 URL；代理密码与
+`client_secret` 一样加密保存。
+
+代理只在 `BangumiModule` 的共享 `QNetworkAccessManager` 上配置一次，因此授权页
+预检、Token 交换、`/v0/me` 和所有业务 API 使用完全相同的代理。系统浏览器和本地
+OAuth 回环回调不属于该网络管理器，仍遵循系统浏览器与本机网络设置。
 
 ## 配置检查层次
 
@@ -208,7 +220,11 @@ anime-land status [--token-store memory|file|system] [--token-file PATH]
 anime-land logout [--token-store memory|file|system] [--token-file PATH]
 ```
 
-以上命令的 `--token-store` 默认值均为 `system`。
+以上命令都支持 `--proxy URL` 和
+`--log-level trace|debug|info|warn|error|critical`；`collections` 同样支持这两个
+公共选项。`--proxy` 只覆盖本次运行的 `proxy_url`，不会改写设置文件；
+`--log-level` 优先于 `ANIME_LAND_LOG_LEVEL`。所有命令的 `--token-store` 默认值均为
+`system`。
 
 CLI 是正式 View，不是绕过 Presenter 的测试入口。将来 Qt View 实现同一 `BangumiView`，消费相同动态指导和结构化错误。
 
@@ -220,7 +236,8 @@ CLI 是正式 View，不是绕过 Presenter 的测试入口。将来 Qt View 实
 - App 参数本地检查与 `app_nonexistence` 页面识别。
 - Token JSON、`/v0/me` JSON、敏感响应过滤。
 - Memory/File/System TokenStore 语义。
-- ArgParser 的 login/status/logout 和非法组合。
+- HTTP/SOCKS5 代理解析、认证字段和 Module 共享网络管理器。
+- ArgParser 的 login/status/logout、公共嵌套选项的绝对名称和非法组合。
 - 真实账号下的正确应用、错误 App ID、错误 Secret、错误回调、拒绝授权和端口占用。
 
 外部依据：

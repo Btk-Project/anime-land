@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QtLogging>
 #include <QStandardPaths>
 #include <QTimer>
 
@@ -79,10 +80,18 @@ auto parseCommand(int argc, char **argv) -> ParseOutcome {
 }
 
 auto selectedCredentials(const cli::Command &command)
-    -> cli::CredentialStoreOptions {
+    -> cli::CommonCommandOptions {
     return std::visit(
-        [](const auto &value) -> cli::CredentialStoreOptions {
-            return {.tokenStore = value.tokenStore, .tokenFile = value.tokenFile};
+        [](const auto &value) -> cli::CommonCommandOptions {
+            return value.common;
+        },
+        command);
+}
+
+auto selectedRuntimeOptions(const cli::Command &command) -> cli::CommonCommandOptions {
+    return std::visit(
+        [](const auto &value) -> cli::CommonCommandOptions {
+            return value.common;
         },
         command);
 }
@@ -90,9 +99,9 @@ auto selectedCredentials(const cli::Command &command)
 auto selectedConfigPath(const cli::Command &command) -> std::optional<QString> {
     return std::visit(
         [](const auto &value) -> std::optional<QString> {
-            if constexpr (requires { value.config; }) {
-                if (value.config) {
-                    return utf8(*value.config);
+            if constexpr (requires { value.settings.config; }) {
+                if (value.settings.config) {
+                    return utf8(*value.settings.config);
                 }
             }
             return std::nullopt;
@@ -159,6 +168,18 @@ auto main(int argc, char **argv) -> int {
         return parsed.exitCode;
     }
     auto &command = *parsed.command;
+    const auto runtimeOptions = selectedRuntimeOptions(command);
+    if (runtimeOptions.logLevel && !setLogLevel(*runtimeOptions.logLevel)) {
+        std::cerr << "invalid log level: " << *runtimeOptions.logLevel << '\n';
+        return 2;
+    }
+#ifndef ANIME_LAND_USE_SPDLOG
+    if (!qEnvironmentVariableIsSet("QT_MESSAGE_PATTERN")) {
+        qSetMessagePattern(QStringLiteral(
+            "[%{time yyyy-MM-dd hh:mm:ss.zzz}] [%{type}] "
+            "[%{file}:%{line}] %{message}"));
+    }
+#endif
 
     AL_LOG_INFO("[app] starting version={} command={}", ANIME_LAND_VERSION_STRING,
                 commandName(command));
@@ -210,6 +231,11 @@ auto main(int argc, char **argv) -> int {
     {
         auto settings = globalSettings.get();
         bangumiSettings = settings->bangumi_settings;
+    }
+    if (runtimeOptions.proxy) {
+        bangumiSettings.proxy_url =
+            QUrl(utf8(*runtimeOptions.proxy), QUrl::StrictMode);
+        AL_LOG_INFO("[app.config] command-line Bangumi proxy override enabled");
     }
 
     const auto credentialOptions = selectedCredentials(command);

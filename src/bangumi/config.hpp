@@ -65,7 +65,7 @@ struct BangumiCapabilityRemediation {
  * @brief 已验证的领域值与服务器原始 body。
  * @pre value 必须由对应 endpoint 的完整协议/业务校验产生。
  * @post 业务代码使用 value；rawBody 只供透传、诊断或大数据专用路径使用，
- * 不得重新逐字段解析。
+ * 不得重新逐字段解析，且只在Debug模式下有效。
  */
 template <typename T> struct BangumiResponse {
   T value;

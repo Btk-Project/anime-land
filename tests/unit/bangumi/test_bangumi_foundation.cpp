@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileDevice>
+#include <QNetworkProxy>
 #include <QTemporaryDir>
 #include <QUrlQuery>
 
@@ -14,6 +15,7 @@
 #include "bangumi/collection.hpp"
 #include "bangumi/config.hpp"
 #include "bangumi/http_request.hpp"
+#include "bangumi/network_proxy.hpp"
 #include "bangumi/protocol.hpp"
 #include "bangumi/system_credential_provider_p.hpp"
 
@@ -372,6 +374,88 @@ TEST(BangumiOAuthApplication, CanBeProvidedAfterModuleConstruction) {
   clearBangumiOAuthApplication(application);
   EXPECT_TRUE(application.clientId.isEmpty());
   EXPECT_TRUE(application.clientSecret.empty());
+}
+
+TEST(BangumiNetworkProxy, KeepsExistingPolicyWhenCustomProxyIsEmpty) {
+  QNetworkAccessManager network;
+  network.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+
+  auto configured =
+      anime_land::detail::configureBangumiNetworkProxy(network,
+                                                       BangumiSettings{});
+
+  ASSERT_TRUE(configured) << configured.error().message.toStdString();
+  EXPECT_FALSE(*configured);
+  EXPECT_EQ(network.proxy().type(), QNetworkProxy::NoProxy);
+}
+
+TEST(BangumiNetworkProxy, AppliesAuthenticatedHttpProxy) {
+  QNetworkAccessManager network;
+  BangumiSettings settings;
+  settings.proxy_url =
+      QUrl(QStringLiteral("http://proxy.example:7890"), QUrl::StrictMode);
+  settings.proxy_username = QStringLiteral("proxy-user");
+  settings.proxy_password = "proxy-password";
+
+  auto configured =
+      anime_land::detail::configureBangumiNetworkProxy(network, settings);
+
+  ASSERT_TRUE(configured) << configured.error().message.toStdString();
+  EXPECT_TRUE(*configured);
+  EXPECT_EQ(network.proxy().type(), QNetworkProxy::HttpProxy);
+  EXPECT_EQ(network.proxy().hostName(), QStringLiteral("proxy.example"));
+  EXPECT_EQ(network.proxy().port(), 7890);
+  EXPECT_EQ(network.proxy().user(), QStringLiteral("proxy-user"));
+  EXPECT_EQ(network.proxy().password(), QStringLiteral("proxy-password"));
+}
+
+TEST(BangumiNetworkProxy, AppliesSocks5ProxyWithDefaultPort) {
+  QNetworkAccessManager network;
+  BangumiSettings settings;
+  settings.proxy_url =
+      QUrl(QStringLiteral("socks5://127.0.0.1"), QUrl::StrictMode);
+
+  auto configured =
+      anime_land::detail::configureBangumiNetworkProxy(network, settings);
+
+  ASSERT_TRUE(configured) << configured.error().message.toStdString();
+  EXPECT_TRUE(*configured);
+  EXPECT_EQ(network.proxy().type(), QNetworkProxy::Socks5Proxy);
+  EXPECT_EQ(network.proxy().hostName(), QStringLiteral("127.0.0.1"));
+  EXPECT_EQ(network.proxy().port(), 1080);
+}
+
+TEST(BangumiNetworkProxy, ModuleAppliesProxyToItsSingleSharedNetworkManager) {
+  auto store = TokenStore::create(
+      {.kind = TokenStoreKind::Memory, .filePath = QString{}});
+  ASSERT_TRUE(store) << store.error().message.toStdString();
+  BangumiSettings settings;
+  settings.proxy_url =
+      QUrl(QStringLiteral("http://127.0.0.1:7890"), QUrl::StrictMode);
+
+  BangumiModule module(std::move(settings), std::move(*store));
+
+  const auto networks = module.findChildren<QNetworkAccessManager *>(
+      QString{}, Qt::FindDirectChildrenOnly);
+  ASSERT_EQ(networks.size(), 1);
+  EXPECT_EQ(networks.front()->proxy().type(), QNetworkProxy::HttpProxy);
+  EXPECT_EQ(networks.front()->proxy().hostName(), QStringLiteral("127.0.0.1"));
+  EXPECT_EQ(networks.front()->proxy().port(), 7890);
+}
+
+TEST(BangumiNetworkProxy, RejectsUnsupportedSchemeWithoutChangingNetwork) {
+  QNetworkAccessManager network;
+  network.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+  BangumiSettings settings;
+  settings.proxy_url =
+      QUrl(QStringLiteral("https://proxy.example:7890"), QUrl::StrictMode);
+
+  auto configured =
+      anime_land::detail::configureBangumiNetworkProxy(network, settings);
+
+  ASSERT_FALSE(configured);
+  EXPECT_EQ(configured.error().code, BangumiErrorCode::InvalidConfiguration);
+  EXPECT_EQ(network.proxy().type(), QNetworkProxy::NoProxy);
 }
 
 TEST(BangumiCapabilities, UsesComposableFlagsAndDynamicFeatureGuide) {

@@ -255,7 +255,11 @@ auto BangumiClient::getUserCollections(const BangumiToken &token,
                 parsed->data.size(), parsed->total);
     co_return BangumiUserCollectionsResponse {
         .value = std::move(parsed).value(),
+#if defined(QT_DEBUG)
         .rawBody = data,
+#else
+        .rawBody = {},
+#endif
     };
 }
 

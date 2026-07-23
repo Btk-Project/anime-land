@@ -73,6 +73,7 @@ private:
   BangumiModuleOptions mOptions;
   std::unique_ptr<TokenStore> mTokenStore;
   QNetworkAccessManager mNetwork;
+  std::optional<BangumiError> mNetworkConfigurationError;
   BangumiAuth mAuth;
   BangumiClient mClient;
   BangumiLoginState mState = BangumiLoginState::LoggedOut;

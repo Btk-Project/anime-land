@@ -126,20 +126,20 @@ struct CustomParser<QString> {
 
 /**
  * @brief QUrl 的严格字符串协议 parser。
- * @pre 写入值必须有效；读取文本必须能由 QUrl::StrictMode 接受。
+ * @pre 写入值必须有效或为空；非空输入文本必须能由 QUrl::StrictMode 接受。
  * @post wire 形式使用 FullyEncoded，读取失败不修改目标 QUrl。
  */
 template <>
 struct CustomParser<QUrl> {
     /**
    * @brief 以 FullyEncoded 字符串写入 URL。
-   * @pre value.isValid() 为 true。
-   * @post 无效 URL 返回 InvalidType。
+   * @pre value.isValid() 或 value.isEmpty() 为 true。
+   * @post 非空的无效 URL 返回 InvalidType。
    */
     template <typename W, typename Parent, typename Tags>
     static auto write(W &writer, const QUrl &value, const Parent &parent,
                       const Tags &tags) -> ParserResult {
-        if (!value.isValid()) {
+        if (!value.isEmpty() && !value.isValid()) {
             return detail::parser_error(sa::ErrorCode::InvalidType, "Cannot serialize an invalid QUrl");
         }
         return parser_write<W>(writer, value.toString(QUrl::FullyEncoded), parent, tags);
@@ -157,6 +157,11 @@ struct CustomParser<QUrl> {
         auto result = parser_read<R>(input, encoded, tags);
         if (!result) {
             return result;
+        }
+
+        if (encoded.isEmpty()) {
+            value.clear();
+            return sa::success();
         }
 
         QUrl parsed(encoded, QUrl::StrictMode);

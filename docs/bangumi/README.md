@@ -45,7 +45,7 @@
 
 ## 运行日志
 
-默认日志级别为 `info`，输出到 stderr，覆盖应用启动/退出、设置加载、凭据后端、登录状态迁移、OAuth 阶段、HTTP 请求结果和收藏操作结果。未启用 spdlog 的构建可通过环境变量 `ANIME_LAND_LOG_LEVEL` 切换为 `trace`、`debug`、`info`、`warn`、`error` 或 `critical`。
+默认日志级别为 `info`，覆盖应用启动/退出、设置加载、凭据后端、登录状态迁移、OAuth 阶段、HTTP 请求结果和收藏操作结果。所有 CLI 命令可通过 `--log-level` 切换为 `trace`、`debug`、`info`、`warn`、`error` 或 `critical`；未启用 spdlog 时，消息仍使用 `std::format` 语法格式化，再交给 `qDebug`、`qInfo`、`qWarning` 或 `qCritical`。`main` 默认设置接近 spdlog 的“时间、级别、文件:行号、正文”Qt 消息模板，显式的 `QT_MESSAGE_PATTERN` 环境变量可覆盖它；`ANIME_LAND_LOG_LEVEL` 也可设置级别，命令行参数优先。
 
 日志只使用固定路由模板和结构化元数据。禁止记录 token、授权码、client secret、OAuth state、完整回调 URL、原始 Token 响应和收藏响应正文；调试新增日志时也必须遵守这一边界。
 

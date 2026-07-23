@@ -9,10 +9,34 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 using namespace anime_land;
 
 namespace {
+
+#ifndef ANIME_LAND_USE_SPDLOG
+struct CapturedQtLogMessage {
+  QtMsgType type;
+  QString message;
+  QString file;
+  int line;
+};
+
+std::vector<CapturedQtLogMessage> *qtLogMessages = nullptr;
+
+void captureQtLogMessage(QtMsgType type, const QMessageLogContext &context,
+                         const QString &message) {
+  if (qtLogMessages != nullptr) {
+    qtLogMessages->push_back({
+        .type = type,
+        .message = message,
+        .file = QString::fromUtf8(context.file != nullptr ? context.file : ""),
+        .line = context.line,
+    });
+  }
+}
+#endif
 
 struct QtSerializationProbe {
   QString text;
@@ -44,6 +68,34 @@ void removeSettingsFiles(const std::filesystem::path &path) {
 }
 
 } // namespace
+
+#ifndef ANIME_LAND_USE_SPDLOG
+TEST(AppLog, FallbackUsesQtLoggingAndStdFormatSyntax) {
+  std::vector<CapturedQtLogMessage> messages;
+  qtLogMessages = &messages;
+  const auto previousHandler = qInstallMessageHandler(captureQtLogMessage);
+
+  EXPECT_TRUE(setLogLevel("trace"));
+  const int debugLine = __LINE__ + 1;
+  AL_LOG_DEBUG("formatted {} {:02}", "value", 7);
+  const int warningLine = __LINE__ + 1;
+  AL_LOG_WARN("warning {}", 3);
+
+  qInstallMessageHandler(previousHandler);
+  qtLogMessages = nullptr;
+
+  ASSERT_EQ(messages.size(), 2U);
+  EXPECT_EQ(messages[0].type, QtDebugMsg);
+  EXPECT_EQ(messages[0].message, QStringLiteral("formatted value 07"));
+  EXPECT_TRUE(messages[0].file.endsWith(QStringLiteral("test_app_settings.cpp")));
+  EXPECT_EQ(messages[0].line, debugLine);
+  EXPECT_EQ(messages[1].type, QtWarningMsg);
+  EXPECT_EQ(messages[1].message, QStringLiteral("warning 3"));
+  EXPECT_TRUE(messages[1].file.endsWith(QStringLiteral("test_app_settings.cpp")));
+  EXPECT_EQ(messages[1].line, warningLine);
+  EXPECT_TRUE(setLogLevel("info"));
+}
+#endif
 
 TEST(AppSettings, Load) {
   GlobalAppSettingGuard gasguard;
@@ -139,6 +191,9 @@ TEST(AppSettings, LoadOrCreateWritesEveryDefaultField) {
   EXPECT_NE(contents.find("oauth_application_page"), std::string::npos);
   EXPECT_NE(contents.find("bangumi_api"), std::string::npos);
   EXPECT_NE(contents.find("user_agent"), std::string::npos);
+  EXPECT_NE(contents.find("proxy_url"), std::string::npos);
+  EXPECT_NE(contents.find("proxy_username"), std::string::npos);
+  EXPECT_NE(contents.find("proxy_password"), std::string::npos);
 
   const auto loaded = settingsGuard.loadOrCreate(path);
   ASSERT_TRUE(loaded);
@@ -150,12 +205,17 @@ TEST(AppSettings, EncryptsBangumiClientSecretAndDecryptsOnLoad) {
   GlobalAppSettingGuard settingsGuard;
   const auto path = temporarySettingsPath("encrypted-secret");
   constexpr std::string_view secret = "bangumi-client-secret-value";
+  constexpr std::string_view proxyPassword = "bangumi-proxy-password";
 
   {
     auto settings = settingsGuard.get();
     *settings = AppSettings{};
     settings->bangumi_settings.client_id = QStringLiteral("bangumi-client-id");
     settings->bangumi_settings.client_secret = secret;
+    settings->bangumi_settings.proxy_url =
+        QUrl(QStringLiteral("http://127.0.0.1:7890"), QUrl::StrictMode);
+    settings->bangumi_settings.proxy_username = QStringLiteral("proxy-user");
+    settings->bangumi_settings.proxy_password = proxyPassword;
   }
   ASSERT_TRUE(settingsGuard.save(path));
 
@@ -164,6 +224,7 @@ TEST(AppSettings, EncryptsBangumiClientSecretAndDecryptsOnLoad) {
   const std::string contents((std::istreambuf_iterator<char>(input)),
                              std::istreambuf_iterator<char>());
   EXPECT_EQ(contents.find(secret), std::string::npos);
+  EXPECT_EQ(contents.find(proxyPassword), std::string::npos);
   EXPECT_NE(contents.find("encrypted:v1:"), std::string::npos);
   EXPECT_TRUE(std::filesystem::exists(path.string() + ".key"));
 
@@ -177,6 +238,11 @@ TEST(AppSettings, EncryptsBangumiClientSecretAndDecryptsOnLoad) {
     EXPECT_EQ(settings->bangumi_settings.client_id,
               QStringLiteral("bangumi-client-id"));
     EXPECT_EQ(settings->bangumi_settings.client_secret, secret);
+    EXPECT_EQ(settings->bangumi_settings.proxy_url,
+              QUrl(QStringLiteral("http://127.0.0.1:7890"), QUrl::StrictMode));
+    EXPECT_EQ(settings->bangumi_settings.proxy_username,
+              QStringLiteral("proxy-user"));
+    EXPECT_EQ(settings->bangumi_settings.proxy_password, proxyPassword);
   }
   removeSettingsFiles(path);
 }
@@ -226,6 +292,20 @@ TEST(AppSettings, RejectsInvalidSerializedQUrl) {
   EXPECT_FALSE(serializer(value));
   ASSERT_NE(serializer.error(), nullptr);
   EXPECT_NE(serializer.error()->msg.find("Invalid QUrl"), std::string::npos);
+}
+
+TEST(AppSettings, EmptySerializedQUrlRepresentsAnUnsetUrl) {
+  constexpr std::string_view input = "text='valid'\nurl=''\n";
+  QtSerializationProbe value{
+      .text = QStringLiteral("unchanged"),
+      .url = QUrl(QStringLiteral("https://example.com"), QUrl::StrictMode),
+  };
+  NEKO_NAMESPACE::TomlplusplusSerializer::InputSerializer serializer(
+      input.data(), input.size());
+
+  ASSERT_TRUE(serializer(value)) << serializer.error()->msg;
+  EXPECT_EQ(value.text, QStringLiteral("valid"));
+  EXPECT_TRUE(value.url.isEmpty());
 }
 
 #include "common_main.hpp.in"
