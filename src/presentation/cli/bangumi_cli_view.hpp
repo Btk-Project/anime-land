@@ -10,6 +10,8 @@ public:
   void showState(BangumiLoginState state) override;
   void showUser(const BangumiUser &user) override;
   void showCollections(const BangumiUserCollectionsResponse &response) override;
+  void
+  showSearchResults(const BangumiSubjectSearchResponse &response) override;
   void showError(const BangumiError &error) override;
   void showMessage(QStringView message) override;
   auto requestOAuthApplication(const BangumiOAuthApplicationGuide &guide)

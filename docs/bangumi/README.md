@@ -1,7 +1,7 @@
 # Bangumi 模块设计索引
 
 > 文档状态：Living Design  
-> 当前阶段：浏览器登录闭环 + Collection Read 能力参考切片  
+> 当前阶段：浏览器登录闭环 + 公开条目搜索 + Collection Read 能力参考切片
 > 前端架构：MVP（Model-View-Presenter）
 
 本文件只负责导航、当前状态和跨专题约束。协议细节、接口字段和测试清单放在专题文档中，避免每次修改都加载一份不断膨胀的总设计。
@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | 登录、OAuth、回调、TokenStore、CLI | [login.md](login.md) | 从 App 配置到 `/v0/me` 验证的完整登录事务 |
 | 功能声明、八项权限、动态指导、权限不足交互 | [capabilities.md](capabilities.md) | `BangumiCapability`、`BangumiModuleOptions` 与 remediation 契约 |
+| 搜索条目 | [search.md](search.md) | 公开 POST 搜索、可选账号上下文、筛选、分页与 DTO |
 | 获取用户收藏 | [collections.md](collections.md) | 官方端点、分页、DTO、解析、权限语义与首个接口 |
 | 项目整体路线 | [../plan.md](../plan.md) | 播放器、数据层、同步和应用级规划 |
 
@@ -22,6 +23,8 @@
 - 缺少 App 参数时展示个人应用创建链接、准确回调地址、最低权限与可选权限。
 - 打开浏览器前远程预检授权页，可识别已观察到的 `app_nonexistence`；Token 交换阶段补充 App Secret/回调错误提示。
 - 八项 Bangumi 权限使用位枚举表示；功能通过初始化 options 声明自己依赖的权限。
+- 公开条目搜索支持完整筛选和分页；未登录时匿名请求，活动会话存在时使用可选 Token，不注册或检查 capability。
+- `search` CLI 命令支持位置关键词、类型、排序、标签与分页；尽力复用已保存会话，恢复失败时继续匿名查询。
 - `MemoryTokenStore`、`FileTokenStore` 和默认的 `SystemTokenStore`；系统后端覆盖 Linux Secret Service、Windows Credential Manager 与 macOS Keychain。
 - 首个能力参考切片：读取当前登录用户的收藏，包含过滤、分页、DTO 映射和结构化权限修复信息。
 - `collections` CLI 命令恢复会话、发起一页 GET 查询；Client 校验 DTO 后，CLI 输出服务端原始 JSON。
@@ -42,6 +45,7 @@
 5. 错误文本和日志不得包含 token、code、client secret、完整回调 URL 或原始 Token 响应。
 6. 功能声明只提供“需要什么权限”的用户指导；最终能否执行始终以 Bangumi API 的实际响应为准。
 7. 新增外部协议事实时，应写入对应专题文档并附官方来源，不让高频知识只能靠反复翻阅远端文档。
+8. 公开 API 不为统一形式强行注册 `requiredCapabilities=None` 的 feature；可以使用活动会话，但不得把登录变成前置条件。
 
 ## 运行日志
 
@@ -69,8 +73,9 @@ flowchart LR
 | --- | --- |
 | `src/bangumi/auth.*` | OAuth、预检、回调和 Token 交换 |
 | `src/bangumi/capability.*` | 权限枚举元数据、功能声明、动态指导和修复错误 |
+| `src/bangumi/search.*` | 公开条目搜索请求、响应 DTO、编码与校验 |
 | `src/bangumi/collection.*` | 收藏查询值对象、DTO、URL 和 JSON 映射 |
-| `src/bangumi/client.*` | `/v0/me` 与收藏 HTTP 请求 |
+| `src/bangumi/client.*` | `/v0/me`、公开搜索与收藏 HTTP 请求 |
 | `src/bangumi/bangumi.hpp`, `module.cpp` | Model 门面、状态和事务编排 |
 | `src/bangumi/config.*` | Token、错误模型和 TokenStore |
 | `src/presentation/*` | Presenter 和 CLI View |
@@ -83,4 +88,4 @@ flowchart LR
 - [Bangumi 用户授权机制](https://github.com/bangumi/api/blob/master/docs-raw/How-to-Auth.md)
 - [Bangumi User-Agent 建议](https://github.com/bangumi/api/blob/master/docs-raw/user%20agent.md)
 
-外部协议核对日期：2026-07-22。
+外部协议核对日期：2026-07-23。

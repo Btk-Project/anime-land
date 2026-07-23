@@ -8,6 +8,7 @@
 #include "bangumi/capability.hpp"
 #include "bangumi/collection.hpp"
 #include "bangumi/config.hpp"
+#include "bangumi/search.hpp"
 #include "common/app_settings.hpp"
 
 class QNetworkReply;
@@ -22,6 +23,9 @@ public:
 
   auto getCurrentUser(const BangumiToken &token)
       -> ilias::Task<BangumiResult<BangumiUser>>;
+  auto searchSubjects(const BangumiSubjectSearchQuery &query,
+                      std::optional<QString> accessToken = std::nullopt)
+      -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>>;
   auto getUserCollections(const BangumiToken &token, QStringView username,
                           const BangumiCollectionQuery &query,
                           const BangumiFeatureDeclaration &feature)

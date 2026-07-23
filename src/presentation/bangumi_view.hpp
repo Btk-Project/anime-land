@@ -17,6 +17,8 @@ public:
   virtual void showUser(const BangumiUser &user) = 0;
   virtual void
   showCollections(const BangumiUserCollectionsResponse &response) = 0;
+  virtual void
+  showSearchResults(const BangumiSubjectSearchResponse &response) = 0;
   virtual void showError(const BangumiError &error) = 0;
   virtual void showMessage(QStringView message) = 0;
 

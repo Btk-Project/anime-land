@@ -77,6 +77,20 @@ BangumiFeatureDeclaration{
 3. 一个功能可组合多个能力，例如 `CollectionRead | CollectionWrite`。
 4. options 中未注册的功能不应通过 Module 门面执行；当前收藏 API 会返回 `InvalidState`。
 
+该规则只适用于确实依赖开发者应用权限的功能。公开 API 不需要为了统一形式声明一个
+`requiredCapabilities=None` 的 feature。
+
+例如条目搜索：
+
+```cpp
+auto BangumiModule::searchSubjects(BangumiSubjectSearchQuery query)
+    -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>>;
+```
+
+搜索可以复用当前活动会话中的可选 Token，但未登录时必须仍可匿名执行；它不检查
+`BangumiModuleOptions`，也不进入 OAuth 最低权限指导。具体契约见
+[search.md](search.md)。
+
 ## 动态创建指导
 
 `buildBangumiOAuthApplicationGuide(settings, options)` 遍历八个单项位：

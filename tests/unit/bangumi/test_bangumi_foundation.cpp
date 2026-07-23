@@ -3,8 +3,10 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileDevice>
+#include <QNetworkReply>
 #include <QNetworkProxy>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QUrlQuery>
 
 #include <ilias/platform/qt.hpp>
@@ -17,9 +19,11 @@
 #include "bangumi/http_request.hpp"
 #include "bangumi/network_proxy.hpp"
 #include "bangumi/protocol.hpp"
+#include "bangumi/search.hpp"
 #include "bangumi/system_credential_provider_p.hpp"
 
 #include <array>
+#include <cstring>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -114,6 +118,133 @@ struct RapidJsonByteStringProbe {
         NEKO_NAMESPACE::Object("text", &RapidJsonByteStringProbe::text);
   };
 };
+
+struct FakeHttpResponse {
+  int status = 200;
+  QByteArray body;
+  QNetworkReply::NetworkError error = QNetworkReply::NoError;
+};
+
+class FakeNetworkReply final : public QNetworkReply {
+public:
+  FakeNetworkReply(const QNetworkRequest &request, FakeHttpResponse response,
+                   QObject *parent)
+      : QNetworkReply(parent), mBody(std::move(response.body)) {
+    setRequest(request);
+    setUrl(request.url());
+    setAttribute(QNetworkRequest::HttpStatusCodeAttribute, response.status);
+    setHeader(QNetworkRequest::ContentTypeHeader,
+              QByteArrayLiteral("application/json"));
+    if (response.error != QNetworkReply::NoError) {
+      setError(response.error, QStringLiteral("fake network error"));
+    }
+    open(QIODevice::ReadOnly);
+    QTimer::singleShot(0, this, [this]() {
+      setFinished(true);
+      emit readyRead();
+      emit finished();
+    });
+  }
+
+  void abort() override {
+    if (isFinished()) {
+      return;
+    }
+    setError(QNetworkReply::OperationCanceledError,
+             QStringLiteral("fake request cancelled"));
+    setFinished(true);
+    emit finished();
+  }
+
+  auto bytesAvailable() const -> qint64 override {
+    return static_cast<qint64>(mBody.size() - mOffset) +
+           QNetworkReply::bytesAvailable();
+  }
+
+protected:
+  auto readData(char *data, qint64 maximumSize) -> qint64 override {
+    if (mOffset >= mBody.size()) {
+      return -1;
+    }
+    const auto remaining = static_cast<qint64>(mBody.size() - mOffset);
+    const auto amount = std::min(maximumSize, remaining);
+    std::memcpy(data, mBody.constData() + mOffset,
+                static_cast<std::size_t>(amount));
+    mOffset += static_cast<qsizetype>(amount);
+    return amount;
+  }
+
+private:
+  QByteArray mBody;
+  qsizetype mOffset = 0;
+};
+
+class FakeNetworkAccessManager final : public QNetworkAccessManager {
+public:
+  std::vector<FakeHttpResponse> responses;
+  std::vector<QNetworkRequest> requests;
+  std::vector<QByteArray> requestBodies;
+  std::vector<Operation> operations;
+
+protected:
+  auto createRequest(Operation operation, const QNetworkRequest &request,
+                     QIODevice *outgoingData) -> QNetworkReply * override {
+    operations.push_back(operation);
+    requests.push_back(request);
+    requestBodies.push_back(outgoingData != nullptr ? outgoingData->readAll()
+                                                    : QByteArray{});
+    const auto index = requests.size() - 1;
+    FakeHttpResponse response =
+        index < responses.size()
+            ? responses[index]
+            : FakeHttpResponse{.status = 500,
+                               .body = QByteArrayLiteral("{}"),
+                               .error = QNetworkReply::UnknownServerError};
+    return new FakeNetworkReply(request, std::move(response), this);
+  }
+};
+
+auto sampleSubjectSearchResponse() -> QByteArray {
+  return QByteArrayLiteral(R"json({
+    "total": 1,
+    "limit": 20,
+    "offset": 0,
+    "data": [{
+      "id": 400602,
+      "type": 2,
+      "name": "Sousou no Frieren",
+      "name_cn": "葬送的芙莉莲",
+      "summary": "冒险结束后的故事",
+      "series": false,
+      "nsfw": false,
+      "locked": false,
+      "date": "2023-09-29",
+      "platform": "TV",
+      "images": {
+        "large": "large", "common": "common", "medium": "medium",
+        "small": "small", "grid": "grid"
+      },
+      "volumes": 0,
+      "eps": 28,
+      "total_episodes": 28,
+      "rating": {
+        "rank": 10,
+        "total": 12000,
+        "count": {"10": 1000},
+        "score": 8.8
+      },
+      "collection": {
+        "wish": 100,
+        "collect": 200,
+        "doing": 300,
+        "on_hold": 10,
+        "dropped": 5
+      },
+      "meta_tags": ["TV", "日本动画"],
+      "tags": [{"name": "治愈", "count": 1200}]
+    }]
+  })json");
+}
 
 } // namespace
 
@@ -606,6 +737,170 @@ TEST(BangumiCollections, RejectsInvalidProtocolEnumTransactionally) {
 
   ASSERT_FALSE(result);
   EXPECT_EQ(result.error().code, BangumiErrorCode::InvalidResponse);
+}
+
+TEST(BangumiSearch, BuildsPublicPostRequestWithOfficialPayloadShape) {
+  BangumiSubjectSearchQuery query{
+      .keyword = QStringLiteral("芙莉莲"),
+      .sort = BangumiSubjectSearchSort::Rank,
+      .filter =
+          {
+              .types = {BangumiSubjectType::Anime},
+              .metaTags = {QStringLiteral("TV")},
+              .tags = {QStringLiteral("治愈")},
+              .airDates = {QStringLiteral(">=2023-01-01")},
+              .ratings = {QStringLiteral(">=8")},
+              .ratingCounts = {QStringLiteral(">=1000")},
+              .ranks = {QStringLiteral("<=100")},
+              .nsfw = false,
+          },
+      .limit = 20,
+      .offset = 40,
+  };
+
+  auto result = anime_land::detail::buildBangumiSubjectSearchRequest(
+      BangumiSettings{}, query);
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->url.path(), QStringLiteral("/v0/search/subjects"));
+  const QUrlQuery parameters(result->url);
+  EXPECT_EQ(parameters.queryItemValue(QStringLiteral("limit")),
+            QStringLiteral("20"));
+  EXPECT_EQ(parameters.queryItemValue(QStringLiteral("offset")),
+            QStringLiteral("40"));
+  EXPECT_FALSE(result->headers.bearerToken);
+  EXPECT_EQ(result->headers.contentType, QByteArrayLiteral("application/json"));
+  EXPECT_TRUE(result->body.contains("\"keyword\":\"芙莉莲\""));
+  EXPECT_TRUE(result->body.contains("\"sort\":\"rank\""));
+  EXPECT_TRUE(result->body.contains("\"type\":[2]"));
+  EXPECT_TRUE(result->body.contains("\"meta_tags\":[\"TV\"]"));
+  EXPECT_TRUE(result->body.contains("\"tag\":[\"治愈\"]"));
+  EXPECT_TRUE(result->body.contains("\"rating_count\":[\">=1000\"]"));
+  EXPECT_TRUE(result->body.contains("\"nsfw\":false"));
+}
+
+TEST(BangumiSearch, UsesOptionalTokenWithoutMakingItRequired) {
+  BangumiSubjectSearchQuery query{
+      .keyword = QStringLiteral("芙莉莲"),
+      .filter = {},
+  };
+  auto anonymous = anime_land::detail::buildBangumiSubjectSearchRequest(
+      BangumiSettings{}, query);
+  auto authenticated = anime_land::detail::buildBangumiSubjectSearchRequest(
+      BangumiSettings{}, query, QStringLiteral("session-token"));
+
+  ASSERT_TRUE(anonymous);
+  ASSERT_TRUE(authenticated);
+  EXPECT_FALSE(anonymous->headers.bearerToken);
+  ASSERT_TRUE(authenticated->headers.bearerToken);
+  EXPECT_EQ(*authenticated->headers.bearerToken,
+            QStringLiteral("session-token"));
+  EXPECT_TRUE(anonymous->toQt()
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+  EXPECT_EQ(authenticated->toQt().rawHeader(QByteArrayLiteral("Authorization")),
+            QByteArrayLiteral("Bearer session-token"));
+}
+
+TEST(BangumiSearch, ParsesOfficialPagedSubjectShape) {
+  auto result = anime_land::detail::parseBangumiSubjectSearchResponse(
+      sampleSubjectSearchResponse());
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->total, 1);
+  EXPECT_EQ(result->limit, 20);
+  ASSERT_EQ(result->data.size(), 1U);
+  const auto &subject = result->data.front();
+  EXPECT_EQ(subject.id, 400602);
+  EXPECT_EQ(subject.type, BangumiSubjectType::Anime);
+  EXPECT_EQ(subject.nameCn, QStringLiteral("葬送的芙莉莲"));
+  EXPECT_EQ(subject.episodes, 28);
+  EXPECT_DOUBLE_EQ(subject.rating.score, 8.8);
+  EXPECT_EQ(subject.collection.doing, 300);
+  ASSERT_EQ(subject.tags.size(), 1U);
+  EXPECT_EQ(subject.tags.front().name, QStringLiteral("治愈"));
+}
+
+TEST(BangumiSearch, ClientSearchesSuccessfullyWithoutToken) {
+  FakeNetworkAccessManager network;
+  network.responses.push_back(
+      {.status = 200, .body = sampleSubjectSearchResponse()});
+  BangumiClient client(network, BangumiSettings{});
+  BangumiSubjectSearchQuery query{
+      .keyword = QStringLiteral("芙莉莲"),
+      .filter = {},
+      .limit = 20,
+  };
+
+  auto result = client.searchSubjects(query).wait();
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(network.requests.size(), 1U);
+  EXPECT_EQ(network.operations.front(), QNetworkAccessManager::PostOperation);
+  EXPECT_TRUE(network.requests.front()
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+  EXPECT_TRUE(network.requestBodies.front().contains("\"keyword\":\"芙莉莲\""));
+  ASSERT_EQ(result->value.data.size(), 1U);
+  EXPECT_EQ(result->value.data.front().id, 400602);
+}
+
+TEST(BangumiSearch, RejectedOptionalTokenFallsBackToAnonymousSearch) {
+  FakeNetworkAccessManager network;
+  network.responses.push_back(
+      {.status = 401,
+       .body = QByteArrayLiteral(R"json({"title":"Unauthorized"})json"),
+       .error = QNetworkReply::AuthenticationRequiredError});
+  network.responses.push_back(
+      {.status = 200, .body = sampleSubjectSearchResponse()});
+  BangumiClient client(network, BangumiSettings{});
+  BangumiSubjectSearchQuery query{
+      .keyword = QStringLiteral("芙莉莲"),
+      .filter = {},
+      .limit = 20,
+  };
+
+  auto result =
+      client.searchSubjects(query, QStringLiteral("stale-token")).wait();
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(network.requests.size(), 2U);
+  EXPECT_EQ(network.requests[0].rawHeader(QByteArrayLiteral("Authorization")),
+            QByteArrayLiteral("Bearer stale-token"));
+  EXPECT_TRUE(network.requests[1]
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+}
+
+TEST(BangumiSearch, ModuleDoesNotRequireLoginOrRegisteredFeature) {
+  auto store = TokenStore::create(
+      {.kind = TokenStoreKind::Memory, .filePath = QString{}});
+  ASSERT_TRUE(store) << store.error().message.toStdString();
+  BangumiModule module(BangumiSettings{}, std::move(*store),
+                       BangumiModuleOptions{});
+  BangumiSubjectSearchQuery invalidQuery{
+      .keyword = QStringLiteral("芙莉莲"),
+      .filter = {},
+      .limit = 0,
+  };
+
+  auto result = module.searchSubjects(std::move(invalidQuery)).wait();
+
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().code, BangumiErrorCode::InvalidConfiguration);
+  EXPECT_EQ(module.loginState(), BangumiLoginState::LoggedOut);
+  EXPECT_TRUE(module.enabledFeatures().empty());
+}
+
+TEST(BangumiSearch, RejectsInvalidPaginationBeforeNetwork) {
+  BangumiSubjectSearchQuery query;
+  query.limit = 51;
+
+  auto result = anime_land::detail::buildBangumiSubjectSearchRequest(
+      BangumiSettings{}, query);
+
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().code, BangumiErrorCode::InvalidConfiguration);
 }
 
 TEST(BangumiHttpRequest, MaterializesTypedHeadersAndFormBody) {

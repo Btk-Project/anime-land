@@ -57,6 +57,66 @@ auto collectionQuery(const cli::CollectionsCommand &command)
   return query;
 }
 
+auto searchQuery(const cli::SearchCommand &command)
+    -> BangumiResult<BangumiSubjectSearchQuery> {
+  BangumiSubjectSearchQuery query;
+  query.keyword =
+      QString::fromUtf8(command.keyword.data(),
+                        static_cast<qsizetype>(command.keyword.size()));
+  query.limit = command.limit;
+  query.offset = command.offset;
+
+  if (command.subjectType == "book") {
+    query.filter.types.push_back(BangumiSubjectType::Book);
+  } else if (command.subjectType == "anime") {
+    query.filter.types.push_back(BangumiSubjectType::Anime);
+  } else if (command.subjectType == "music") {
+    query.filter.types.push_back(BangumiSubjectType::Music);
+  } else if (command.subjectType == "game") {
+    query.filter.types.push_back(BangumiSubjectType::Game);
+  } else if (command.subjectType == "real") {
+    query.filter.types.push_back(BangumiSubjectType::Real);
+  } else if (command.subjectType != "all") {
+    return ilias::Err(
+        bangumiError(BangumiErrorCode::InvalidConfiguration,
+                     QStringLiteral("未知的条目类型：%1")
+                         .arg(QString::fromStdString(command.subjectType))));
+  }
+
+  if (command.sort == "match") {
+    query.sort = BangumiSubjectSearchSort::Match;
+  } else if (command.sort == "heat") {
+    query.sort = BangumiSubjectSearchSort::Heat;
+  } else if (command.sort == "rank") {
+    query.sort = BangumiSubjectSearchSort::Rank;
+  } else if (command.sort == "score") {
+    query.sort = BangumiSubjectSearchSort::Score;
+  } else {
+    return ilias::Err(
+        bangumiError(BangumiErrorCode::InvalidConfiguration,
+                     QStringLiteral("未知的搜索排序：%1")
+                         .arg(QString::fromStdString(command.sort))));
+  }
+
+  const auto appendTags = [](const std::vector<std::string> &source,
+                             std::vector<QString> &destination) {
+    destination.reserve(source.size());
+    for (const auto &value : source) {
+      destination.push_back(QString::fromUtf8(
+          value.data(), static_cast<qsizetype>(value.size())));
+    }
+  };
+  appendTags(command.metaTags, query.filter.metaTags);
+  appendTags(command.tags, query.filter.tags);
+
+  if (query.limit < 1 || query.limit > 50 || query.offset < 0) {
+    return ilias::Err(bangumiError(
+        BangumiErrorCode::InvalidConfiguration,
+        QStringLiteral("--limit 必须为 1..50，--offset 不能为负")));
+  }
+  return query;
+}
+
 } // namespace
 
 BangumiPresenter::BangumiPresenter(BangumiModule &module, BangumiView &view,
@@ -127,6 +187,20 @@ auto BangumiPresenter::run(const cli::CollectionsCommand &command)
   co_return present(co_await mModule.getCurrentUserCollections(*query));
 }
 
+auto BangumiPresenter::run(const cli::SearchCommand &command)
+    -> ilias::Task<int> {
+  auto query = searchQuery(command);
+  if (!query) {
+    mView.showError(query.error());
+    co_return exitCode(query.error());
+  }
+
+  // Reuse a valid saved account when one is available. Failure to restore is
+  // deliberately non-fatal because subject search is a public endpoint.
+  static_cast<void>(co_await mModule.restoreSession());
+  co_return present(co_await mModule.searchSubjects(std::move(*query)));
+}
+
 auto BangumiPresenter::ensureOAuthApplication()
     -> ilias::Task<BangumiResult<std::optional<BangumiOAuthApplication>>> {
   if (mModule.hasOAuthApplication()) {
@@ -170,6 +244,16 @@ auto BangumiPresenter::present(
     return exitCode(result.error());
   }
   mView.showCollections(*result);
+  return 0;
+}
+
+auto BangumiPresenter::present(
+    BangumiResult<BangumiSubjectSearchResponse> result) -> int {
+  if (!result) {
+    mView.showError(result.error());
+    return exitCode(result.error());
+  }
+  mView.showSearchResults(*result);
   return 0;
 }
 

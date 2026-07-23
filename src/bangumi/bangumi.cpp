@@ -202,6 +202,30 @@ auto BangumiModule::logout() -> ilias::Task<BangumiResult<void>> {
   co_return BangumiResult<void>{};
 }
 
+auto BangumiModule::searchSubjects(BangumiSubjectSearchQuery query)
+    -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>> {
+  AL_LOG_INFO("[bangumi.search] fetch started limit={} offset={} "
+              "authenticated={}",
+              query.limit, query.offset, mToken.has_value());
+  if (mNetworkConfigurationError) {
+    co_return ilias::Err(*mNetworkConfigurationError);
+  }
+
+  std::optional<QString> accessToken;
+  if (mToken && !mToken->accessToken.isEmpty()) {
+    accessToken = mToken->accessToken;
+  }
+  auto result = co_await mClient.searchSubjects(query, std::move(accessToken));
+  if (!result) {
+    AL_LOG_WARN("[bangumi.search] fetch failed code={}",
+                bangumiErrorCodeName(result.error().code));
+    co_return ilias::Err(std::move(result.error()));
+  }
+  AL_LOG_INFO("[bangumi.search] fetch completed returned={} total={}",
+              result->value.data.size(), result->value.total);
+  co_return result;
+}
+
 auto BangumiModule::getCurrentUserCollections(BangumiCollectionQuery query)
     -> ilias::Task<BangumiResult<BangumiUserCollectionsResponse>> {
   AL_LOG_INFO("[bangumi.collections] fetch started limit={} offset={}",

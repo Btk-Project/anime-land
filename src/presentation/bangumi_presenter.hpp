@@ -32,11 +32,13 @@ public:
   auto run(const cli::StatusCommand &) -> ilias::Task<int>;
   auto run(const cli::LogoutCommand &) -> ilias::Task<int>;
   auto run(const cli::CollectionsCommand &command) -> ilias::Task<int>;
+  auto run(const cli::SearchCommand &command) -> ilias::Task<int>;
 
 private:
   auto present(BangumiResult<BangumiUser> result) -> int;
   auto present(BangumiResult<void> result, QStringView successMessage) -> int;
   auto present(BangumiResult<BangumiUserCollectionsResponse> result) -> int;
+  auto present(BangumiResult<BangumiSubjectSearchResponse> result) -> int;
   static auto exitCode(const BangumiError &error) -> int;
   auto ensureOAuthApplication()
       -> ilias::Task<BangumiResult<std::optional<BangumiOAuthApplication>>>;

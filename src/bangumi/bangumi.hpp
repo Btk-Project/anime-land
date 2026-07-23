@@ -46,6 +46,8 @@ public:
   auto restoreSession() -> ilias::Task<BangumiResult<BangumiUser>>;
   auto login() -> ilias::Task<BangumiResult<BangumiUser>>;
   auto logout() -> ilias::Task<BangumiResult<void>>;
+  auto searchSubjects(BangumiSubjectSearchQuery query)
+      -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>>;
   auto getCurrentUserCollections(BangumiCollectionQuery query = {})
       -> ilias::Task<BangumiResult<BangumiUserCollectionsResponse>>;
 

@@ -18,6 +18,7 @@ namespace {
 using namespace std::chrono_literals;
 constexpr auto kNetworkTimeout = 30s;
 constexpr qsizetype kMaximumUserResponseSize = 256 * 1024;
+constexpr qsizetype kMaximumSearchResponseSize = 8 * 1024 * 1024;
 constexpr qsizetype kMaximumCollectionsResponseSize = 4 * 1024 * 1024;
 
 auto responseMentionsMissingPermission(const QByteArray &data) -> bool {
@@ -144,6 +145,111 @@ auto BangumiClient::getCurrentUser(const BangumiToken &token)
     AL_LOG_INFO("[bangumi.http] request completed route=/v0/me bytes={}",
                 data.size());
     co_return user;
+}
+
+auto BangumiClient::searchSubjects(const BangumiSubjectSearchQuery &query,
+                                   std::optional<QString> accessToken)
+    -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>> {
+    auto requestValue = detail::buildBangumiSubjectSearchRequest(
+        mSettings, query, std::move(accessToken));
+    if (!requestValue) {
+        AL_LOG_ERROR("[bangumi.http] request validation failed "
+                     "route=/v0/search/subjects code={}",
+                     bangumiErrorCodeName(requestValue.error().code));
+        co_return ilias::Err(std::move(requestValue.error()));
+    }
+
+    bool authenticatedAttempt = requestValue->headers.bearerToken.has_value();
+    while (true) {
+        QNetworkRequest request = requestValue->toQt();
+        AL_LOG_INFO("[bangumi.http] request started method=POST "
+                    "route=/v0/search/subjects limit={} offset={} authenticated={}",
+                    query.limit, query.offset, authenticatedAttempt);
+        QElapsedTimer timer;
+        timer.start();
+        QNetworkReply *rawReply = mNetwork.post(request, requestValue->body);
+        mActiveReply = rawReply;
+        auto reply = co_await rawReply;
+        if (!reply) {
+            mActiveReply.clear();
+            AL_LOG_ERROR("[bangumi.http] request creation failed "
+                         "route=/v0/search/subjects");
+            co_return ilias::Err(
+                bangumiError(BangumiErrorCode::NetworkError,
+                             QStringLiteral("无法创建 Bangumi 条目搜索请求")));
+        }
+
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray data = reply->readAll();
+        const auto networkError = reply->error();
+        const QString networkErrorText = reply->errorString();
+        mActiveReply.clear();
+        AL_LOG_INFO("[bangumi.http] response received "
+                    "route=/v0/search/subjects status={} bytes={} elapsed_ms={} "
+                    "network_error={} authenticated={}",
+                    status, data.size(), timer.elapsed(),
+                    static_cast<int>(networkError), authenticatedAttempt);
+
+        if (status == 401 && authenticatedAttempt) {
+            AL_LOG_WARN("[bangumi.http] optional authentication rejected; "
+                        "retrying public search anonymously");
+            requestValue->headers.bearerToken.reset();
+            authenticatedAttempt = false;
+            continue;
+        }
+        if (data.size() > kMaximumSearchResponseSize) {
+            AL_LOG_WARN("[bangumi.http] response exceeded size limit "
+                        "route=/v0/search/subjects bytes={}",
+                        data.size());
+            co_return ilias::Err(
+                bangumiError(BangumiErrorCode::InvalidResponse,
+                             QStringLiteral("Bangumi 条目搜索响应过大")));
+        }
+        if (networkError == QNetworkReply::OperationCanceledError) {
+            AL_LOG_INFO("[bangumi.http] request cancelled "
+                        "route=/v0/search/subjects");
+            co_return ilias::Err(
+                bangumiError(BangumiErrorCode::Cancelled,
+                             QStringLiteral("Bangumi 条目搜索请求已取消")));
+        }
+        if (networkError != QNetworkReply::NoError) {
+            AL_LOG_WARN("[bangumi.http] network failure "
+                        "route=/v0/search/subjects error={}",
+                        static_cast<int>(networkError));
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::NetworkError,
+                QStringLiteral("Bangumi 条目搜索请求失败：%1")
+                    .arg(networkErrorText)));
+        }
+        if (status < 200 || status >= 300) {
+            AL_LOG_WARN("[bangumi.http] unexpected response "
+                        "route=/v0/search/subjects status={}",
+                        status);
+            co_return ilias::Err(
+                bangumiError(BangumiErrorCode::NetworkError,
+                             QStringLiteral("Bangumi 条目搜索返回 HTTP %1")
+                                 .arg(status)));
+        }
+
+        auto parsed = detail::parseBangumiSubjectSearchResponse(data);
+        if (!parsed) {
+            AL_LOG_WARN("[bangumi.http] response validation failed "
+                        "route=/v0/search/subjects");
+            co_return ilias::Err(std::move(parsed.error()));
+        }
+        AL_LOG_INFO("[bangumi.http] request completed "
+                    "route=/v0/search/subjects returned={} total={}",
+                    parsed->data.size(), parsed->total);
+        co_return BangumiSubjectSearchResponse {
+            .value = std::move(parsed).value(),
+#if defined(QT_DEBUG)
+            .rawBody = data,
+#else
+            .rawBody = {},
+#endif
+        };
+    }
 }
 
 auto BangumiClient::getUserCollections(const BangumiToken &token,

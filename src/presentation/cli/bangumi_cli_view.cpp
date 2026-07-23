@@ -81,6 +81,22 @@ auto trimInput(std::string value) -> std::string {
     return std::string(first, last);
 }
 
+auto subjectTypeName(BangumiSubjectType type) -> std::string_view {
+    switch (type) {
+        case BangumiSubjectType::Book:
+            return "book";
+        case BangumiSubjectType::Anime:
+            return "anime";
+        case BangumiSubjectType::Music:
+            return "music";
+        case BangumiSubjectType::Game:
+            return "game";
+        case BangumiSubjectType::Real:
+            return "real";
+    }
+    return "unknown";
+}
+
 template <typename Reader>
 auto requestRequiredLine(Reader &reader, ilias::Stdout &output,
                          std::string_view prompt, bool sensitive,
@@ -165,6 +181,31 @@ void BangumiCliView::showCollections(
     const BangumiUserCollectionsResponse &response) {
     std::cout.write(response.rawBody.constData(), response.rawBody.size());
     if (response.rawBody.isEmpty() || !response.rawBody.endsWith('\n')) {
+        std::cout.put('\n');
+    }
+    std::cout.flush();
+}
+
+void BangumiCliView::showSearchResults(
+    const BangumiSubjectSearchResponse &response) {
+    const auto &page = response.value;
+    std::cout << "Bangumi search results: " << page.data.size() << " of "
+              << page.total << " (offset " << page.offset << ", limit "
+              << page.limit << ")\n";
+    for (const auto &subject : page.data) {
+        const auto title =
+            subject.nameCn.trimmed().isEmpty() ? subject.name : subject.nameCn;
+        std::cout << subject.id << '\t' << subjectTypeName(subject.type) << '\t'
+                  << title.toStdString();
+        if (subject.date && !subject.date->isEmpty()) {
+            std::cout << "\tdate=" << subject.date->toStdString();
+        }
+        if (subject.rating.score > 0) {
+            std::cout << "\tscore=" << subject.rating.score;
+        }
+        if (subject.rating.rank > 0) {
+            std::cout << "\trank=" << subject.rating.rank;
+        }
         std::cout.put('\n');
     }
     std::cout.flush();

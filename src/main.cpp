@@ -122,8 +122,12 @@ auto commandName(const cli::Command &command) -> std::string_view {
             else if constexpr (std::is_same_v<Command, cli::LogoutCommand>) {
                 return "logout";
             }
-            else {
+            else if constexpr (std::is_same_v<Command,
+                                              cli::CollectionsCommand>) {
                 return "collections";
+            }
+            else {
+                return "search";
             }
         },
         command);
@@ -251,7 +255,19 @@ auto main(int argc, char **argv) -> int {
     if (credentialOptions.tokenFile) {
         storeOptions.filePath = utf8(*credentialOptions.tokenFile);
     }
+    auto effectiveStoreKind = *kind;
     auto store = TokenStore::create(std::move(storeOptions));
+    if (!store && std::holds_alternative<cli::SearchCommand>(command)) {
+        AL_LOG_WARN("[app.credentials] selected store unavailable for public "
+                    "search; falling back to memory code={}",
+                    bangumiErrorCodeName(store.error().code));
+        view.showMessage(QStringLiteral(
+            "Bangumi 凭据存储不可用；本次搜索将继续使用匿名模式。"));
+        TokenStoreOptions anonymousStoreOptions;
+        anonymousStoreOptions.kind = TokenStoreKind::Memory;
+        store = TokenStore::create(std::move(anonymousStoreOptions));
+        effectiveStoreKind = TokenStoreKind::Memory;
+    }
     if (!store) {
         AL_LOG_ERROR("[app.credentials] token store initialization failed code={}",
                      bangumiErrorCodeName(store.error().code));
@@ -261,7 +277,7 @@ auto main(int argc, char **argv) -> int {
                    : 2;
     }
     AL_LOG_INFO("[app.credentials] token store ready backend={}",
-                tokenStoreName(*kind));
+                tokenStoreName(effectiveStoreKind));
 
     ilias::QIoContext ioContext;
     ioContext.install();
