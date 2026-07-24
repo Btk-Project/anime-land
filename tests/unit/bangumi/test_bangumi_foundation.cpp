@@ -714,7 +714,7 @@ TEST(BangumiCollections, ParsesOfficialPagedCollectionShape) {
   EXPECT_EQ(roundTrip->data.front().subjectId, 8);
 }
 
-TEST(BangumiCollections, RejectsInvalidProtocolEnumTransactionally) {
+TEST(BangumiCollections, PreservesUnknownNumericEnums) {
   const QByteArray response = QByteArrayLiteral(R"json({
     "total": 1,
     "limit": 30,
@@ -723,7 +723,7 @@ TEST(BangumiCollections, RejectsInvalidProtocolEnumTransactionally) {
       "subject_id": 8,
       "subject_type": 5,
       "rate": 9,
-      "type": 3,
+      "type": 9,
       "tags": [],
       "ep_status": 0,
       "vol_status": 0,
@@ -735,8 +735,17 @@ TEST(BangumiCollections, RejectsInvalidProtocolEnumTransactionally) {
   auto result =
       anime_land::detail::parseBangumiUserCollectionsResponse(response);
 
-  ASSERT_FALSE(result);
-  EXPECT_EQ(result.error().code, BangumiErrorCode::InvalidResponse);
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(result->data.size(), 1U);
+  EXPECT_EQ(static_cast<int>(result->data.front().subjectType), 5);
+  EXPECT_EQ(static_cast<int>(result->data.front().collectionType), 9);
+
+  const auto encoded = encodeBangumiUserCollectionPage(*result);
+  auto roundTrip =
+      anime_land::detail::parseBangumiUserCollectionsResponse(encoded);
+  ASSERT_TRUE(roundTrip) << roundTrip.error().message.toStdString();
+  EXPECT_EQ(static_cast<int>(roundTrip->data.front().subjectType), 5);
+  EXPECT_EQ(static_cast<int>(roundTrip->data.front().collectionType), 9);
 }
 
 TEST(BangumiSearch, BuildsPublicPostRequestWithOfficialPayloadShape) {

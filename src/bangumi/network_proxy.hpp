@@ -14,8 +14,6 @@ namespace anime_land::detail {
  * and the manager's existing/default policy was preserved.
  * @post On invalid configuration, network remains unchanged.
  */
-auto configureBangumiNetworkProxy(QNetworkAccessManager &network,
-                                  const BangumiSettings &settings)
-    -> BangumiResult<bool>;
+auto configureBangumiNetworkProxy(QNetworkAccessManager &network, const BangumiSettings &settings) -> BangumiResult<bool>;
 
 } // namespace anime_land::detail

@@ -164,8 +164,13 @@ struct LocalTagQuery {
  */
 class CatalogStore {
 public:
-    /// 构造一个不拥有数据库连接的目录 Store。
-    explicit CatalogStore(LocalDatabase &database);
+    /**
+     * @brief 审查目录表并绑定整个 Store 生命周期内复用的 Form。
+     *
+     * 表不存在或结构与 Record 不一致时直接返回错误；Store 不负责修复 Schema。
+     */
+    static auto open(LocalDatabase &database) -> ilias::IoTask<CatalogStore>;
+
     ~CatalogStore();
 
     CatalogStore(const CatalogStore &) = delete;
@@ -178,10 +183,9 @@ public:
      *
      * @return 已存在或新创建的本地 SubjectId。
      *
-     * 条目、外部映射、标签和 SQLite FTS 索引在同一事务中提交。
+     * 条目、外部映射和标签在同一事务中提交。
      */
-    auto upsertSubjectSnapshot(SubjectSnapshot snapshot)
-        -> ilias::IoTask<SubjectId>;
+    auto upsertSubjectSnapshot(SubjectSnapshot snapshot) -> ilias::IoTask<SubjectId>;
 
     /**
      * @brief 按外部章节身份批量插入或更新章节快照。
@@ -199,45 +203,34 @@ public:
         -> ilias::IoTask<void>;
 
     /// 按 provider_key 与 external_id 查找本地条目 ID。
-    auto findSubjectByExternalRef(const ExternalRef &ref)
-        -> ilias::IoTask<std::optional<SubjectId>>;
+    auto findSubjectByExternalRef(const ExternalRef &ref) -> ilias::IoTask<std::optional<SubjectId>>;
 
     /// 按 provider_key 与 external_id 查找本地章节 ID。
-    auto findEpisodeByExternalRef(const ExternalRef &ref)
-        -> ilias::IoTask<std::optional<EpisodeId>>;
+    auto findEpisodeByExternalRef(const ExternalRef &ref) -> ilias::IoTask<std::optional<EpisodeId>>;
 
     /// 按本地主键读取条目详情；不存在时返回空 optional。
-    auto getSubject(SubjectId subject)
-        -> ilias::IoTask<std::optional<SubjectDetails>>;
+    auto getSubject(SubjectId subject) -> ilias::IoTask<std::optional<SubjectDetails>>;
 
     /// 按本地主键读取章节详情；不存在时返回空 optional。
-    auto getEpisode(EpisodeId episode)
-        -> ilias::IoTask<std::optional<EpisodeDetails>>;
+    auto getEpisode(EpisodeId episode) -> ilias::IoTask<std::optional<EpisodeDetails>>;
 
     /// 按稳定顺序列出条目的全部章节。
-    auto listEpisodes(SubjectId subject)
-        -> ilias::IoTask<std::vector<EpisodeDetails>>;
+    auto listEpisodes(SubjectId subject) -> ilias::IoTask<std::vector<EpisodeDetails>>;
 
     /**
      * @brief 搜索已经持久化的条目。
      *
-     * SQLite 使用 FTS5，MySQL 使用兼容的 LIKE 查询；标签始终按规范化名称精确
-     * 匹配。空文本和空标签表示按更新时间列出条目。
+     * 文本字段使用 ORM 的 contains 表达式；标签按规范化名称精确匹配。空文本
+     * 和空标签表示按更新时间列出条目。
      */
-    auto searchSubjects(const LocalSubjectQuery &query)
-        -> ilias::IoTask<std::vector<SubjectSummary>>;
+    auto searchSubjects(const LocalSubjectQuery &query) -> ilias::IoTask<std::vector<SubjectSummary>>;
 
     /// 按关联条目数和规范化名称稳定列出当前使用中的标签。
-    auto listTags(const LocalTagQuery &query)
-        -> ilias::IoTask<std::vector<TagFacet>>;
+    auto listTags(const LocalTagQuery &query) -> ilias::IoTask<std::vector<TagFacet>>;
 
 private:
     struct State;
-
-    /**
-     * @brief 首次使用时附加并审查全部关系 Form，后续 Store 调用复用这些实例。
-     */
-    auto ensureForms() -> ilias::IoTask<void>;
+    CatalogStore(LocalDatabase &database, std::unique_ptr<State> state);
 
     /// 非拥有引用；调用方必须保证 LocalDatabase 比 Store 存活更久。
     LocalDatabase &mDatabase;

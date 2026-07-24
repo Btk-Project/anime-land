@@ -112,10 +112,6 @@ add_requireconfs("**neko-proto-tools", {
                enable_tomlplusplus = true}
 })
 
-local sqlite_fts5_flag = is_plat("windows")
-    and "/DSQLITE_ENABLE_FTS5"
-    or "-DSQLITE_ENABLE_FTS5"
-
 add_requireconfs("**ilias-sql", {
     version = "dev", -- 使用最新版本
     override = true, -- 强制覆盖
@@ -123,18 +119,7 @@ add_requireconfs("**ilias-sql", {
                stdcxx = tonumber(get_config("stdcxx")),
                enable_sqlite = "sqlcipher",
                enable_mysql = true,
-               enable_orm_interface = true,
-               -- Keep the package hash tied to the required SQLite feature so
-               -- ilias-sql is relinked when its static sqlite dependency changes.
-               cxflags = sqlite_fts5_flag,
-               }
-})
-
--- subject_fts is part of the v0.1 SQLite schema. Compile FTS5 into the
--- SQLCipher amalgamation used for both encrypted and unencrypted SQLite files.
-add_requireconfs("**sqlcipher", {
-    configs = {cflags = sqlite_fts5_flag,
-               cxflags = sqlite_fts5_flag}
+               enable_orm_interface = true}
 })
 
 add_requireconfs("**spdlog", {

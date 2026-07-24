@@ -100,29 +100,43 @@ auto openMemoryDatabase() -> LocalDatabase {
     return std::move(*opened);
 }
 
+auto openCatalog(LocalDatabase &database) -> CatalogStore {
+    auto opened = CatalogStore::open(database).wait();
+    if (!opened) {
+        throw std::runtime_error(opened.error().message());
+    }
+    return std::move(*opened);
+}
+
 } // namespace
 
-TEST(LocalDatabaseMigration, CreatesAndValidatesCatalogSchemaIdempotently) {
+TEST(CatalogStore, CreatesFormsIdempotentlyAndAllowsUnrelatedTables) {
     auto database = openMemoryDatabase();
     EXPECT_EQ(database.backend(), DatabaseBackend::Sqlite);
 
-    auto version = database.schemaVersion().wait();
-    ASSERT_TRUE(version) << version.error().message();
-    EXPECT_EQ(*version, anime_land::persistence::kCurrentSchemaVersion);
+    auto unrelated = database.advancedConnection()
+                         .execute(
+                             "CREATE TABLE unrelated_data("
+                             "id INTEGER PRIMARY KEY, payload BLOB)")
+                         .wait();
+    ASSERT_TRUE(unrelated) << unrelated.error().message();
 
-    auto foreignKeys = database.foreignKeysEnabled().wait();
-    ASSERT_TRUE(foreignKeys) << foreignKeys.error().message();
-    EXPECT_TRUE(*foreignKeys);
+    auto first = CatalogStore::open(database).wait();
+    ASSERT_TRUE(first) << first.error().message();
+    auto second = CatalogStore::open(database).wait();
+    ASSERT_TRUE(second) << second.error().message();
 
-    auto migratedAgain = database.migrate().wait();
-    ASSERT_TRUE(migratedAgain) << migratedAgain.error().message();
-
-    auto validated = database.validateSchema().wait();
-    EXPECT_TRUE(validated) << validated.error().message();
+    auto inserted = database.advancedConnection()
+                        .execute(
+                            "INSERT INTO unrelated_data(id, payload) "
+                            "VALUES (1, X'CAFE')")
+                        .wait();
+    EXPECT_TRUE(inserted) << inserted.error().message();
 }
 
-TEST(LocalDatabaseMigration, EnforcesForeignKeys) {
+TEST(CatalogStore, UsesExplicitForeignKeyConnectionOption) {
     auto database = openMemoryDatabase();
+    auto store = openCatalog(database);
 
     auto inserted = database.advancedConnection()
                         .execute(
@@ -133,95 +147,9 @@ TEST(LocalDatabaseMigration, EnforcesForeignKeys) {
     EXPECT_FALSE(inserted);
 }
 
-TEST(LocalDatabaseMigration, GeneratesSchemaFromIliasSqlDescriptions) {
-    const auto metadata = ilias::sql::detail::extractSqlColumnMetadata(
-        anime_land::persistence::schema::SubjectTypeConstraint {});
-    EXPECT_TRUE(metadata.tags.not_null);
-    EXPECT_EQ(metadata.check_expression, "subject_type >= 0");
-
-    auto statements =
-        anime_land::persistence::schema::catalogMigrationV1Statements(
-            "sqlite");
-    ASSERT_TRUE(statements) << statements.error().message();
-
-    const auto findTable = [&statements](std::string_view table) {
-        return std::ranges::find_if(
-            *statements, [table](const std::string &statement) {
-                return statement.starts_with("CREATE TABLE \"" +
-                                             std::string(table) + "\" ");
-            });
-    };
-
-    const auto subjects = findTable("subjects");
-    ASSERT_NE(subjects, statements->end());
-    EXPECT_NE(subjects->find("CHECK (subject_type >= 0)"), std::string::npos);
-    EXPECT_NE(subjects->find("CHECK (metadata_level BETWEEN 0 AND 1)"),
-              std::string::npos);
-    EXPECT_NE(subjects->find("DEFAULT '[]'"), std::string::npos);
-
-    const auto subjectRefs = findTable("subject_external_refs");
-    ASSERT_NE(subjectRefs, statements->end());
-    EXPECT_NE(subjectRefs->find(
-                  "PRIMARY KEY (\"provider_key\", \"external_id\")"),
-              std::string::npos);
-    EXPECT_NE(subjectRefs->find(
-                  "FOREIGN KEY (\"subject_id\") REFERENCES \"subjects\" "
-                  "(\"id\") ON DELETE CASCADE"),
-              std::string::npos);
-}
-
-TEST(LocalDatabaseMigration, GeneratesMysqlSchemaWithoutSqliteFts) {
-    auto statements =
-        anime_land::persistence::schema::catalogMigrationV1Statements(
-            "mysql");
-    ASSERT_TRUE(statements) << statements.error().message();
-
-    const auto subjects = std::ranges::find_if(
-        *statements, [](const std::string &statement) {
-            return statement.starts_with("CREATE TABLE `subjects` ");
-        });
-    ASSERT_NE(subjects, statements->end());
-    EXPECT_NE(subjects->find("CHECK (subject_type >= 0)"), std::string::npos);
-
-    const auto subjectRefs = std::ranges::find_if(
-        *statements, [](const std::string &statement) {
-            return statement.starts_with(
-                "CREATE TABLE `subject_external_refs` ");
-        });
-    ASSERT_NE(subjectRefs, statements->end());
-    EXPECT_NE(subjectRefs->find("`provider_key` VARCHAR(64)"),
-              std::string::npos);
-    EXPECT_NE(subjectRefs->find("`external_id` VARCHAR(255)"),
-              std::string::npos);
-    EXPECT_NE(subjectRefs->find(
-                  "PRIMARY KEY (`provider_key`, `external_id`)"),
-              std::string::npos);
-
-    EXPECT_EQ(std::ranges::find_if(
-                  *statements, [](const std::string &statement) {
-                      return statement.contains("subject_fts") ||
-                             statement.contains("fts5");
-                  }),
-              statements->end());
-}
-
-TEST(LocalDatabaseMigration, EnforcesGeneratedChecksAndCompositeKeys) {
+TEST(CatalogStore, EnforcesCompositeIdentityUsedByUpsert) {
     auto database = openMemoryDatabase();
-
-    auto invalidSubject = database.advancedConnection()
-                              .execute(
-                                  "INSERT INTO subjects("
-                                  "subject_type, title, created_at, updated_at"
-                                  ") VALUES (-1, 'invalid', 1, 1)")
-                              .wait();
-    EXPECT_FALSE(invalidSubject);
-
-    auto invalidTag = database.advancedConnection()
-                          .execute(
-                              "INSERT INTO tags(normalized_name, display_name) "
-                              "VALUES ('', 'invalid')")
-                          .wait();
-    EXPECT_FALSE(invalidTag);
+    auto store = openCatalog(database);
 
     auto subject = database.advancedConnection()
                        .execute(
@@ -248,7 +176,7 @@ TEST(LocalDatabaseMigration, EnforcesGeneratedChecksAndCompositeKeys) {
     EXPECT_FALSE(duplicateRef);
 }
 
-TEST(LocalDatabaseMigration, ReopensMigratedFileDatabase) {
+TEST(CatalogStore, ReopensFileDatabase) {
     QTemporaryDir directory;
     ASSERT_TRUE(directory.isValid());
     const auto path =
@@ -262,6 +190,10 @@ TEST(LocalDatabaseMigration, ReopensMigratedFileDatabase) {
         settings.database_password.clear();
         auto opened = LocalDatabase::open(settings).wait();
         ASSERT_TRUE(opened) << opened.error().message();
+        {
+            auto store = CatalogStore::open(*opened).wait();
+            ASSERT_TRUE(store) << store.error().message();
+        }
         auto closed = opened->close().wait();
         ASSERT_TRUE(closed) << closed.error().message();
     }
@@ -272,9 +204,8 @@ TEST(LocalDatabaseMigration, ReopensMigratedFileDatabase) {
     settings.database_password.clear();
     auto reopened = LocalDatabase::open(settings).wait();
     ASSERT_TRUE(reopened) << reopened.error().message();
-    auto version = reopened->schemaVersion().wait();
-    ASSERT_TRUE(version) << version.error().message();
-    EXPECT_EQ(*version, anime_land::persistence::kCurrentSchemaVersion);
+    auto store = CatalogStore::open(*reopened).wait();
+    EXPECT_TRUE(store) << store.error().message();
 }
 
 TEST(LocalDatabaseConfiguration, RejectsUnknownBackend) {
@@ -283,6 +214,49 @@ TEST(LocalDatabaseConfiguration, RejectsUnknownBackend) {
 
     auto opened = LocalDatabase::open(settings).wait();
     EXPECT_FALSE(opened);
+}
+
+TEST(LocalDatabaseConfiguration, LeavesUnknownSchemaUntouched) {
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto path =
+        QFileInfo(directory.filePath(QStringLiteral("unknown.sqlite3")))
+            .filesystemFilePath()
+            .string();
+
+    {
+        ilias::sql::ConnectOptions options;
+        options.filename = path;
+        auto database = ilias::sql::SqlDatabase::open("sqlite", options).wait();
+        ASSERT_TRUE(database) << database.error().message();
+        ASSERT_TRUE(database->execute(
+                                "CREATE TABLE legacy("
+                                "id INTEGER PRIMARY KEY, value TEXT)")
+                        .wait());
+        ASSERT_TRUE(
+            database->execute(
+                        "INSERT INTO legacy(id, value) VALUES (1, 'valuable')")
+                .wait());
+        ASSERT_TRUE(database->close().wait());
+    }
+
+    anime_land::SqlSettings settings;
+    settings.database_type = "sqlite";
+    settings.database_path = path;
+    settings.database_password.clear();
+    auto opened = LocalDatabase::open(settings).wait();
+    ASSERT_TRUE(opened) << opened.error().message();
+    auto store = CatalogStore::open(*opened).wait();
+    ASSERT_TRUE(store) << store.error().message();
+    EXPECT_FALSE(
+        opened->advancedConnection()
+            .execute(
+                "INSERT INTO legacy(id, value) VALUES (1, 'overwritten')")
+            .wait());
+    EXPECT_TRUE(
+        opened->advancedConnection()
+            .execute("INSERT INTO legacy(id, value) VALUES (2, 'preserved')")
+            .wait());
 }
 
 TEST(LocalDatabaseConfiguration, OpensEncryptedDatabaseFromSqlSettings) {
@@ -301,18 +275,53 @@ TEST(LocalDatabaseConfiguration, OpensEncryptedDatabaseFromSqlSettings) {
         auto opened = LocalDatabase::open(settings).wait();
         ASSERT_TRUE(opened) << opened.error().message();
         EXPECT_EQ(opened->backend(), DatabaseBackend::Sqlite);
+        {
+            auto store = CatalogStore::open(*opened).wait();
+            ASSERT_TRUE(store) << store.error().message();
+        }
         auto closed = opened->close().wait();
         ASSERT_TRUE(closed) << closed.error().message();
     }
 
     settings.database_password = "wrong password";
     auto wrongPassword = LocalDatabase::open(settings).wait();
-    EXPECT_FALSE(wrongPassword);
+    if (wrongPassword) {
+        auto store = CatalogStore::open(*wrongPassword).wait();
+        EXPECT_FALSE(store);
+    }
+}
+
+TEST(CatalogStore, RecreatesMissingTable) {
+    auto database = openMemoryDatabase();
+    {
+        auto store = openCatalog(database);
+    }
+    auto dropped =
+        database.advancedConnection().execute("DROP TABLE subject_tags").wait();
+    ASSERT_TRUE(dropped) << dropped.error().message();
+
+    auto store = CatalogStore::open(database).wait();
+    EXPECT_TRUE(store) << store.error().message();
+}
+
+TEST(CatalogStore, AcceptsAdditionalColumns) {
+    auto database = openMemoryDatabase();
+    {
+        auto store = openCatalog(database);
+    }
+    auto changed = database.advancedConnection()
+                       .execute(
+                           "ALTER TABLE subjects ADD COLUMN unexpected TEXT")
+                       .wait();
+    ASSERT_TRUE(changed) << changed.error().message();
+
+    auto store = CatalogStore::open(database).wait();
+    EXPECT_TRUE(store) << store.error().message();
 }
 
 TEST(CatalogStore, UpsertsByExternalIdentityWithoutDowngradingDetails) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     auto detailId = store.upsertSubjectSnapshot(sampleSnapshot()).wait();
     ASSERT_TRUE(detailId) << detailId.error().message();
@@ -354,7 +363,7 @@ TEST(CatalogStore, UpsertsByExternalIdentityWithoutDowngradingDetails) {
 
 TEST(CatalogStore, KeepsSameTitlesWithDifferentExternalIdsSeparate) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     auto first = store.upsertSubjectSnapshot(sampleSnapshot("1")).wait();
     auto second = store.upsertSubjectSnapshot(sampleSnapshot("2")).wait();
@@ -363,9 +372,9 @@ TEST(CatalogStore, KeepsSameTitlesWithDifferentExternalIdsSeparate) {
     EXPECT_NE(*first, *second);
 }
 
-TEST(CatalogStore, SearchesFtsAliasesAndExactNormalizedTags) {
+TEST(CatalogStore, SearchesAliasesAndExactNormalizedTags) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     auto inserted = store.upsertSubjectSnapshot(sampleSnapshot()).wait();
     ASSERT_TRUE(inserted) << inserted.error().message();
@@ -407,7 +416,7 @@ TEST(CatalogStore, SearchesFtsAliasesAndExactNormalizedTags) {
 
 TEST(CatalogStore, UpsertsFindsAndListsTypedEpisodeSnapshots) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     auto subject = store.upsertSubjectSnapshot(sampleSnapshot()).wait();
     ASSERT_TRUE(subject) << subject.error().message();
@@ -468,7 +477,7 @@ TEST(CatalogStore, UpsertsFindsAndListsTypedEpisodeSnapshots) {
 
 TEST(CatalogStore, RejectsEpisodeSnapshotsForUnknownSubject) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     std::vector<EpisodeSnapshot> snapshots;
     snapshots.push_back(
@@ -481,7 +490,7 @@ TEST(CatalogStore, RejectsEpisodeSnapshotsForUnknownSubject) {
 
 TEST(CatalogStore, ListsTypedTagFacetsWithLiteralPrefix) {
     auto database = openMemoryDatabase();
-    CatalogStore store(database);
+    auto store = openCatalog(database);
 
     auto first = store.upsertSubjectSnapshot(sampleSnapshot("1")).wait();
     ASSERT_TRUE(first) << first.error().message();

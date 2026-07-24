@@ -27,7 +27,7 @@ IndentPPDirectives: BeforeHash
 PPIndentWidth: 4
 SkipMacroDefinitionBody: true
 
-# Calls / declarations: prefer preserving existing hand-wrapped code.
+# Calls / declarations: never wrap for a column limit; manual wraps must express structure.
 BinPackArguments: true
 BinPackParameters: true
 AllowAllArgumentsOnNextLine: true

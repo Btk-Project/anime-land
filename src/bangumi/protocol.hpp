@@ -35,7 +35,8 @@ namespace anime_land::bangumi_protocol {
 using namespace NEKO_NAMESPACE;
 
 /** @brief Bangumi JSON 文本的输出格式，不暴露具体 JSON 后端类型。 */
-enum class JsonFormat { Compact, Indented };
+enum class JsonFormat { Compact,
+                        Indented };
 
 /**
  * @brief Bangumi API 的通用错误响应。
@@ -43,19 +44,19 @@ enum class JsonFormat { Compact, Indented };
  * @post 成功解码后，调用方只读取 C++ optional，不再访问 JSON DOM。
  */
 struct ApiErrorResponse {
-  std::optional<QString> error;
-  std::optional<QString> title;
-  std::optional<QString> description;
+    std::optional<QString> error;
+    std::optional<QString> title;
+    std::optional<QString> description;
 
-  // clang-format off
-  struct Neko {
-    static constexpr auto value = Object(
-        "error",       &ApiErrorResponse::error,
-        "title",       &ApiErrorResponse::title,
-        "description", &ApiErrorResponse::description
-    );
-  };
-  // clang-format on
+    // clang-format off
+    struct Neko {
+        static constexpr auto value = Object(
+            "error",       &ApiErrorResponse::error,
+            "title",       &ApiErrorResponse::title,
+            "description", &ApiErrorResponse::description
+        );
+    };
+    // clang-format on
 };
 
 /**
@@ -65,25 +66,25 @@ struct ApiErrorResponse {
  * @post 仅建立结构化协议值；token 非空、expiresIn > 0 等条件由认证层验证。
  */
 struct OAuthTokenResponse {
-  QString accessToken;
-  QString refreshToken;
-  QString tokenType;
-  std::optional<QString> scope;
-  std::int64_t userId = 0;
-  std::int64_t expiresIn = 0;
+    QString accessToken;
+    QString refreshToken;
+    QString tokenType;
+    std::optional<QString> scope;
+    std::int64_t userId = 0;
+    std::int64_t expiresIn = 0;
 
-  // clang-format off
-  struct Neko {
-    static constexpr auto value = Object(
-        "accessToken",  make_tags<rename_tag<"access_token">>(&OAuthTokenResponse::accessToken),
-        "refreshToken", make_tags<rename_tag<"refresh_token">>(&OAuthTokenResponse::refreshToken),
-        "tokenType",    make_tags<rename_tag<"token_type">>(&OAuthTokenResponse::tokenType),
-        "scope",        &OAuthTokenResponse::scope,
-        "userId",       make_tags<rename_tag<"user_id">>(&OAuthTokenResponse::userId),
-        "expiresIn",    make_tags<rename_tag<"expires_in">>(&OAuthTokenResponse::expiresIn)
-    );
-  };
-  // clang-format on
+    // clang-format off
+    struct Neko {
+        static constexpr auto value = Object(
+            "accessToken",  make_tags<rename_tag<"access_token">>(&OAuthTokenResponse::accessToken),
+            "refreshToken", make_tags<rename_tag<"refresh_token">>(&OAuthTokenResponse::refreshToken),
+            "tokenType",    make_tags<rename_tag<"token_type">>(&OAuthTokenResponse::tokenType),
+            "scope",        &OAuthTokenResponse::scope,
+            "userId",       make_tags<rename_tag<"user_id">>(&OAuthTokenResponse::userId),
+            "expiresIn",    make_tags<rename_tag<"expires_in">>(&OAuthTokenResponse::expiresIn)
+        );
+    };
+    // clang-format on
 };
 
 /**
@@ -97,15 +98,14 @@ struct OAuthTokenResponse {
  */
 template <typename T>
 auto decode(const QByteArray &data, T &value) -> std::optional<QString> {
-  RapidJsonInputSerializer serializer(data.constData(),
-                                      static_cast<std::size_t>(data.size()));
-  if (serializer(value)) {
-    return std::nullopt;
-  }
-  if (serializer.error() == nullptr) {
-    return QStringLiteral("未知 RapidJSON 反序列化错误");
-  }
-  return QString::fromStdString(serializer.error()->msg);
+    RapidJsonInputSerializer serializer(data.constData(), static_cast<std::size_t>(data.size()));
+    if (serializer(value)) {
+        return std::nullopt;
+    }
+    if (serializer.error() == nullptr) {
+        return QStringLiteral("未知 RapidJSON 反序列化错误");
+    }
+    return QString::fromStdString(serializer.error()->msg);
 }
 
 /**
@@ -120,21 +120,20 @@ auto decode(const QByteArray &data, T &value) -> std::optional<QString> {
 template <typename T>
 auto encode(const T &value, JsonFormat format = JsonFormat::Compact)
     -> std::optional<QByteArray> {
-  std::vector<char> data;
-  bool serialized = false;
-  if (format == JsonFormat::Compact) {
-    RapidJsonOutputSerializer serializer(data);
-    serialized = serializer(value) && serializer.end();
-  } else {
-    RapidJsonOutputSerializer<NEKO_NAMESPACE::detail::PrettyJsonWriter<>>
-        serializer(data, JsonOutputFormatOptions::Default());
-    serialized = serializer(value) && serializer.end();
-  }
-  if (!serialized || data.size() > static_cast<std::size_t>(
-                                       std::numeric_limits<qsizetype>::max())) {
-    return std::nullopt;
-  }
-  return QByteArray(data.data(), static_cast<qsizetype>(data.size()));
+    std::vector<char> data;
+    bool serialized = false;
+    if (format == JsonFormat::Compact) {
+        RapidJsonOutputSerializer serializer(data);
+        serialized = serializer(value) && serializer.end();
+    }
+    else {
+        RapidJsonOutputSerializer<NEKO_NAMESPACE::detail::PrettyJsonWriter<>> serializer(data, JsonOutputFormatOptions::Default());
+        serialized = serializer(value) && serializer.end();
+    }
+    if (!serialized || data.size() > static_cast<std::size_t>(std::numeric_limits<qsizetype>::max())) {
+        return std::nullopt;
+    }
+    return QByteArray(data.data(), static_cast<qsizetype>(data.size()));
 }
 
 } // namespace anime_land::bangumi_protocol
