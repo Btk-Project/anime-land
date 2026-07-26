@@ -21,6 +21,9 @@ using namespace std::chrono_literals;
 constexpr auto kNetworkTimeout = 30s;
 constexpr qsizetype kMaximumUserResponseSize = 256 * 1024;
 constexpr qsizetype kMaximumSearchResponseSize = 8 * 1024 * 1024;
+constexpr qsizetype kMaximumSubjectResponseSize = 4 * 1024 * 1024;
+constexpr qsizetype kMaximumCalendarResponseSize = 8 * 1024 * 1024;
+constexpr qsizetype kMaximumEpisodesResponseSize = 8 * 1024 * 1024;
 constexpr qsizetype kMaximumCollectionsResponseSize = 4 * 1024 * 1024;
 
 auto responseMentionsMissingPermission(const QByteArray &data) -> bool {
@@ -205,6 +208,293 @@ auto BangumiClient::searchSubjects(const BangumiSubjectSearchQuery &query, std::
 #endif
         };
     }
+}
+
+auto BangumiClient::getSubject(std::int64_t subjectId,
+                               std::optional<QString> accessToken)
+    -> ilias::Task<BangumiResult<BangumiSubjectDetailsResponse>> {
+    auto requestValue = detail::buildBangumiSubjectDetailsRequest(
+        mSettings, subjectId, std::move(accessToken));
+    if (!requestValue) {
+        AL_LOG_ERROR(
+            "[bangumi.http] request validation failed "
+            "route=/v0/subjects/{{subject_id}} code={}",
+            bangumiErrorCodeName(requestValue.error().code));
+        co_return ilias::Err(std::move(requestValue.error()));
+    }
+
+    bool authenticatedAttempt =
+        requestValue->headers.bearerToken.has_value();
+    while (true) {
+        QNetworkRequest request = requestValue->toQt();
+        AL_LOG_INFO(
+            "[bangumi.http] request started method=GET "
+            "route=/v0/subjects/{{subject_id}} subject_id={} authenticated={}",
+            subjectId, authenticatedAttempt);
+        QElapsedTimer timer;
+        timer.start();
+        QNetworkReply *rawReply = mNetwork.get(request);
+        mActiveReply = rawReply;
+        auto reply = co_await rawReply;
+        if (!reply) {
+            mActiveReply.clear();
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::NetworkError,
+                QStringLiteral("无法创建 Bangumi 条目详情请求")));
+        }
+
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute)
+                .toInt();
+        const QByteArray data = reply->readAll();
+        const auto networkError = reply->error();
+        const QString networkErrorText = reply->errorString();
+        mActiveReply.clear();
+        AL_LOG_INFO(
+            "[bangumi.http] response received "
+            "route=/v0/subjects/{{subject_id}} status={} bytes={} "
+            "elapsed_ms={} network_error={} subject_id={} authenticated={}",
+            status, data.size(), timer.elapsed(),
+            static_cast<int>(networkError), subjectId,
+            authenticatedAttempt);
+
+        if (status == 401 && authenticatedAttempt) {
+            AL_LOG_WARN(
+                "[bangumi.http] optional authentication rejected; "
+                "retrying public subject details anonymously");
+            requestValue->headers.bearerToken.reset();
+            authenticatedAttempt = false;
+            continue;
+        }
+        if (data.size() > kMaximumSubjectResponseSize) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::InvalidResponse,
+                QStringLiteral("Bangumi 条目详情响应过大")));
+        }
+        if (networkError == QNetworkReply::OperationCanceledError) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::Cancelled,
+                QStringLiteral("Bangumi 条目详情请求已取消")));
+        }
+        if (status == 404) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::NetworkError,
+                QStringLiteral("Bangumi 找不到该条目")));
+        }
+        if (networkError != QNetworkReply::NoError) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::NetworkError,
+                QStringLiteral("Bangumi 条目详情请求失败：%1")
+                    .arg(networkErrorText)));
+        }
+        if (status < 200 || status >= 300) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::NetworkError,
+                QStringLiteral("Bangumi 条目详情返回 HTTP %1")
+                    .arg(status)));
+        }
+
+        auto parsed = detail::parseBangumiSubjectDetailsResponse(data);
+        if (!parsed) {
+            AL_LOG_WARN(
+                "[bangumi.http] response validation failed "
+                "route=/v0/subjects/{{subject_id}}");
+            co_return ilias::Err(std::move(parsed.error()));
+        }
+        if (parsed->id != subjectId) {
+            co_return ilias::Err(bangumiError(
+                BangumiErrorCode::InvalidResponse,
+                QStringLiteral("Bangumi 条目详情 ID 与请求不一致")));
+        }
+        co_return BangumiSubjectDetailsResponse {
+            .value = std::move(parsed).value(),
+#if defined(QT_DEBUG)
+            .rawBody = data,
+#else
+            .rawBody = {},
+#endif
+        };
+    }
+}
+
+auto BangumiClient::getCalendar()
+    -> ilias::Task<BangumiResult<BangumiCalendarResponse>> {
+    auto requestValue = detail::buildBangumiCalendarRequest(mSettings);
+    if (!requestValue) {
+        AL_LOG_ERROR(
+            "[bangumi.http] request validation failed route=/calendar code={}",
+            bangumiErrorCodeName(requestValue.error().code));
+        co_return ilias::Err(std::move(requestValue.error()));
+    }
+
+    QNetworkRequest request = requestValue->toQt();
+    AL_LOG_INFO("[bangumi.http] request started method=GET route=/calendar");
+    QElapsedTimer timer;
+    timer.start();
+    QNetworkReply *rawReply = mNetwork.get(request);
+    mActiveReply = rawReply;
+    auto reply = co_await rawReply;
+    if (!reply) {
+        mActiveReply.clear();
+        AL_LOG_ERROR(
+            "[bangumi.http] request creation failed route=/calendar");
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("无法创建 Bangumi 每日放送请求")));
+    }
+
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QByteArray data = reply->readAll();
+    const auto networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    mActiveReply.clear();
+    AL_LOG_INFO(
+        "[bangumi.http] response received route=/calendar status={} bytes={} "
+        "elapsed_ms={} network_error={}",
+        status, data.size(), timer.elapsed(), static_cast<int>(networkError));
+
+    if (data.size() > kMaximumCalendarResponseSize) {
+        AL_LOG_WARN(
+            "[bangumi.http] response exceeded size limit route=/calendar "
+            "bytes={}",
+            data.size());
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::InvalidResponse,
+            QStringLiteral("Bangumi 每日放送响应过大")));
+    }
+    if (networkError == QNetworkReply::OperationCanceledError) {
+        AL_LOG_INFO("[bangumi.http] request cancelled route=/calendar");
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::Cancelled,
+            QStringLiteral("Bangumi 每日放送请求已取消")));
+    }
+    if (networkError != QNetworkReply::NoError) {
+        AL_LOG_WARN(
+            "[bangumi.http] network failure route=/calendar error={}",
+            static_cast<int>(networkError));
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("Bangumi 每日放送请求失败：%1")
+                .arg(networkErrorText)));
+    }
+    if (status < 200 || status >= 300) {
+        AL_LOG_WARN(
+            "[bangumi.http] unexpected response route=/calendar status={}",
+            status);
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("Bangumi 每日放送返回 HTTP %1").arg(status)));
+    }
+
+    auto parsed = detail::parseBangumiCalendarResponse(data);
+    if (!parsed) {
+        AL_LOG_WARN(
+            "[bangumi.http] response validation failed route=/calendar");
+        co_return ilias::Err(std::move(parsed.error()));
+    }
+
+    std::size_t subjectCount = 0;
+    for (const auto &day : *parsed) {
+        subjectCount += day.items.size();
+    }
+    AL_LOG_INFO(
+        "[bangumi.http] request completed route=/calendar days={} subjects={}",
+        parsed->size(), subjectCount);
+    co_return BangumiCalendarResponse {
+        .value = std::move(parsed).value(),
+#if defined(QT_DEBUG)
+        .rawBody = data,
+#else
+        .rawBody = {},
+#endif
+    };
+}
+
+auto BangumiClient::getEpisodes(std::int64_t subjectId, int limit, int offset)
+    -> ilias::Task<BangumiResult<BangumiEpisodeResponse>> {
+    auto requestValue =
+        detail::buildBangumiEpisodesRequest(mSettings, subjectId, limit,
+                                            offset);
+    if (!requestValue) {
+        AL_LOG_ERROR(
+            "[bangumi.http] request validation failed route=/v0/episodes "
+            "code={}",
+            bangumiErrorCodeName(requestValue.error().code));
+        co_return ilias::Err(std::move(requestValue.error()));
+    }
+
+    QNetworkRequest request = requestValue->toQt();
+    AL_LOG_INFO(
+        "[bangumi.http] request started method=GET route=/v0/episodes "
+        "subject_id={} limit={} offset={}",
+        subjectId, limit, offset);
+    QElapsedTimer timer;
+    timer.start();
+    QNetworkReply *rawReply = mNetwork.get(request);
+    mActiveReply = rawReply;
+    auto reply = co_await rawReply;
+    if (!reply) {
+        mActiveReply.clear();
+        AL_LOG_ERROR(
+            "[bangumi.http] request creation failed route=/v0/episodes");
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("无法创建 Bangumi 章节请求")));
+    }
+
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QByteArray data = reply->readAll();
+    const auto networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    mActiveReply.clear();
+    AL_LOG_INFO(
+        "[bangumi.http] response received route=/v0/episodes status={} "
+        "bytes={} elapsed_ms={} network_error={} subject_id={}",
+        status, data.size(), timer.elapsed(), static_cast<int>(networkError),
+        subjectId);
+
+    if (data.size() > kMaximumEpisodesResponseSize) {
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::InvalidResponse,
+            QStringLiteral("Bangumi 章节响应过大")));
+    }
+    if (networkError == QNetworkReply::OperationCanceledError) {
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::Cancelled,
+            QStringLiteral("Bangumi 章节请求已取消")));
+    }
+    if (networkError != QNetworkReply::NoError) {
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("Bangumi 章节请求失败：%1")
+                .arg(networkErrorText)));
+    }
+    if (status < 200 || status >= 300) {
+        co_return ilias::Err(bangumiError(
+            BangumiErrorCode::NetworkError,
+            QStringLiteral("Bangumi 章节请求返回 HTTP %1").arg(status)));
+    }
+
+    auto parsed = detail::parseBangumiEpisodesResponse(data);
+    if (!parsed) {
+        AL_LOG_WARN(
+            "[bangumi.http] response validation failed route=/v0/episodes");
+        co_return ilias::Err(std::move(parsed.error()));
+    }
+    AL_LOG_INFO(
+        "[bangumi.http] request completed route=/v0/episodes returned={} "
+        "total={} subject_id={}",
+        parsed->data.size(), parsed->total, subjectId);
+    co_return BangumiEpisodeResponse {
+        .value = std::move(parsed).value(),
+#if defined(QT_DEBUG)
+        .rawBody = data,
+#else
+        .rawBody = {},
+#endif
+    };
 }
 
 auto BangumiClient::getUserCollections(const BangumiToken &token, QStringView username, const BangumiCollectionQuery &query,

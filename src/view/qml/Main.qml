@@ -41,6 +41,14 @@ ApplicationWindow {
 
     function openSubject(subject) {
         selectedSubject = subject
+        if (!uiFixtureMode && subjectDetailsViewModel) {
+            if (subject && subject.subjectId > 0)
+                subjectDetailsViewModel.openSubject(subject.subjectId)
+            else if (subject && subject.bangumiId > 0)
+                subjectDetailsViewModel.openBangumiSubject(subject.bangumiId)
+            else
+                subjectDetailsViewModel.clear()
+        }
         pageStack.push(detailComponent, {"subject": subject})
     }
 
@@ -127,7 +135,7 @@ ApplicationWindow {
 
                         AppText {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "UI Fixture"
+                            text: uiFixtureMode ? "UI Fixture" : "Live Calendar"
                             color: Theme.textMuted
                             font.pixelSize: Theme.captionSize
                             font.weight: Font.DemiBold
@@ -135,7 +143,9 @@ ApplicationWindow {
 
                         AppText {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "尚未连接真实数据"
+                            text: uiFixtureMode
+                                  ? "独立 View 调试模式"
+                                  : "搜索与收藏仍为 Fixture"
                             color: Theme.textFaint
                             font.pixelSize: 10
                         }
@@ -183,6 +193,7 @@ ApplicationWindow {
         HomePage {
             onOpenSubject: subject => root.openSubject(subject)
             onPlayRequested: subject => root.openPlayer(subject)
+            onCalendarRequested: root.showRoot(2)
         }
     }
 
@@ -210,6 +221,7 @@ ApplicationWindow {
         SubjectDetailPage {
             onBackRequested: root.goBack()
             onPlayRequested: subject => root.openPlayer(subject)
+            onLibraryRequested: root.showRoot(1)
         }
     }
 
@@ -220,7 +232,11 @@ ApplicationWindow {
         }
     }
 
-    Component.onCompleted: root.showRoot(0)
+    Component.onCompleted: {
+        root.showRoot(0)
+        if (!uiFixtureMode)
+            calendarViewModel.refresh()
+    }
 
     Timer {
         interval: 60

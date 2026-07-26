@@ -94,6 +94,64 @@ QtObject {
         }
     ]
 
+    readonly property var calendarDays: [
+        {
+            "id": 1,
+            "shortLabel": "一",
+            "label": "星期一",
+            "items": [subjects[1], subjects[4], bangumiSubjects[5]]
+        },
+        {
+            "id": 2,
+            "shortLabel": "二",
+            "label": "星期二",
+            "items": [subjects[0], subjects[2]]
+        },
+        {
+            "id": 3,
+            "shortLabel": "三",
+            "label": "星期三",
+            "items": [subjects[3], subjects[5], bangumiSubjects[5]]
+        },
+        {
+            "id": 4,
+            "shortLabel": "四",
+            "label": "星期四",
+            "items": [subjects[1], subjects[2], subjects[4]]
+        },
+        {
+            "id": 5,
+            "shortLabel": "五",
+            "label": "星期五",
+            "items": [subjects[0], subjects[3]]
+        },
+        {
+            "id": 6,
+            "shortLabel": "六",
+            "label": "星期六",
+            "items": [subjects[2], subjects[4], subjects[5]]
+        },
+        {
+            "id": 7,
+            "shortLabel": "日",
+            "label": "星期日",
+            "items": [subjects[0], subjects[1], subjects[3], bangumiSubjects[5]]
+        }
+    ]
+
+    function currentWeekdayId() {
+        const weekday = new Date().getDay()
+        return weekday === 0 ? 7 : weekday
+    }
+
+    function calendarDay(weekdayId) {
+        for (let index = 0; index < calendarDays.length; ++index) {
+            if (calendarDays[index].id === weekdayId)
+                return calendarDays[index]
+        }
+        return calendarDays[0]
+    }
+
     readonly property var episodes: [
         {"number": "01", "title": "冒险的终点", "duration": "24:10", "progress": 1.0, "source": "已关联 · 1080p", "linked": true},
         {"number": "02", "title": "魔法不是特别之物", "duration": "24:10", "progress": 1.0, "source": "已关联 · 1080p", "linked": true},

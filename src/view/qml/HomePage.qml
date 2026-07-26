@@ -7,8 +7,23 @@ Item {
 
     signal openSubject(var subject)
     signal playRequested(var subject)
+    signal calendarRequested()
 
     readonly property var featured: FixtureData.subjects[0]
+    readonly property var fixtureTodayCalendar:
+        FixtureData.calendarDay(FixtureData.currentWeekdayId())
+    readonly property var todayItems: uiFixtureMode
+        ? fixtureTodayCalendar.items.slice(0, 3)
+        : calendarViewModel.todayItems
+    readonly property int todayItemCount: uiFixtureMode
+        ? fixtureTodayCalendar.items.length
+        : calendarViewModel.todayItemCount
+    readonly property string todayLabel: uiFixtureMode
+        ? fixtureTodayCalendar.label : calendarViewModel.todayLabel
+    readonly property bool calendarLoading:
+        !uiFixtureMode && calendarViewModel.loading
+    readonly property string calendarError: uiFixtureMode
+        ? "" : calendarViewModel.errorMessage
 
     Flickable {
         anchors.fill: parent
@@ -128,6 +143,108 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }
+                    }
+                }
+            }
+
+            SectionHeader {
+                width: parent.width
+                title: "今日放送"
+                detail: root.calendarLoading
+                    ? "正在加载"
+                    : root.calendarError.length > 0
+                      ? "加载失败"
+                      : root.todayLabel + " · " + root.todayItemCount + " 部"
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 112
+                radius: Theme.radius
+                color: Theme.surface
+                border.width: 1
+                border.color: Theme.border
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    spacing: 12
+
+                    Repeater {
+                        model: root.todayItems
+
+                        Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: Theme.radiusSmall
+                            color: todayMouse.containsMouse
+                                   ? Theme.surfaceHover : Theme.surfaceRaised
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 11
+
+                                Rectangle {
+                                    Layout.preferredWidth: 40
+                                    Layout.fillHeight: true
+                                    radius: 4
+                                    color: modelData.color
+                                }
+
+                                Column {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    AppText {
+                                        width: parent.width
+                                        text: modelData.title
+                                        color: Theme.text
+                                        font.pixelSize: Theme.bodySize
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    AppText {
+                                        width: parent.width
+                                        text: modelData.meta
+                                        color: Theme.textMuted
+                                        font.pixelSize: Theme.captionSize
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: todayMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openSubject(modelData)
+                            }
+                        }
+                    }
+
+                    AppText {
+                        visible: root.todayItems.length === 0
+                        Layout.fillWidth: true
+                        text: root.calendarLoading
+                            ? "正在从 Bangumi 加载今日放送……"
+                            : root.calendarError.length > 0
+                              ? root.calendarError
+                              : "今日暂无放送条目。"
+                        color: root.calendarError.length > 0
+                               ? Theme.danger : Theme.textMuted
+                        font.pixelSize: Theme.bodySize
+                        wrapMode: Text.Wrap
+                    }
+
+                    AppButton {
+                        Layout.preferredWidth: 112
+                        text: "完整放送表"
+                        primary: true
+                        onClicked: root.calendarRequested()
                     }
                 }
             }

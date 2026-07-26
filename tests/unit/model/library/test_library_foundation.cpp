@@ -101,6 +101,39 @@ TEST(LibrarySourceItem, RequiresResourceOwnershipAndNonnegativeDuration) {
     EXPECT_EQ(result.error().code, LibraryErrorCode::InvalidDuration);
 }
 
+TEST(LibraryDiscovery, ValidatesSnapshotsBeforePersistence) {
+    MediaDiscovery discovery{
+        .resource =
+            {
+                .providerKey = QStringLiteral("local-file"),
+                .stableKey = QStringLiteral("d:/anime/frieren"),
+                .descriptorVersion = 1,
+                .descriptor = QByteArrayLiteral("resource"),
+                .displayName = QStringLiteral("Frieren"),
+            },
+        .items =
+            {{
+                .stableKey = QStringLiteral("episode-01.mkv"),
+                .descriptor = QByteArrayLiteral("item"),
+                .displayName = QStringLiteral("Episode 01"),
+                .duration = 24min,
+            }},
+        .observedAt = validTimestamp(),
+    };
+    EXPECT_TRUE(validate(discovery));
+
+    discovery.items.front().duration = -1ms;
+    auto result = validate(discovery);
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error().code, LibraryErrorCode::InvalidDuration);
+
+    discovery.items.front().duration = 24min;
+    discovery.observedAt = {};
+    result = validate(discovery);
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error().code, LibraryErrorCode::InvalidTimestamp);
+}
+
 TEST(LibraryEpisodeMediaLink, ValidatesIdsAndTimestamp) {
     EpisodeMediaLink link{
         .episodeId = EpisodeId{3},
@@ -121,6 +154,13 @@ TEST(LibraryEpisodeMediaLink, ValidatesIdsAndTimestamp) {
     result = validate(link);
     ASSERT_FALSE(result);
     EXPECT_EQ(result.error().code, LibraryErrorCode::InvalidTimestamp);
+
+    link.updatedAt = validTimestamp();
+    link.kind = static_cast<MediaLinkKind>(99);
+    result = validate(link);
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error().code,
+              LibraryErrorCode::InvalidMediaLinkKind);
 }
 
 TEST(LibraryPlaybackProgress, ValidatesPositionDurationAndLastSource) {
@@ -166,6 +206,14 @@ TEST(LibraryEnums, ExposeStableDiagnosticNames) {
               "invalid-identity");
     EXPECT_EQ(mediaLinkKindName(MediaLinkKind::Manual), "manual");
     EXPECT_EQ(mediaLinkKindName(MediaLinkKind::Sequence), "sequence");
+    EXPECT_EQ(libraryErrorCodeName(LibraryErrorCode::EmptyImport),
+              "empty-import");
+    EXPECT_EQ(libraryErrorCodeName(LibraryErrorCode::PersistenceFailure),
+              "persistence-failure");
+    EXPECT_EQ(libraryErrorCodeName(LibraryErrorCode::MediaItemNotFound),
+              "media-item-not-found");
+    EXPECT_EQ(libraryErrorCodeName(LibraryErrorCode::InvalidMediaLinkKind),
+              "invalid-media-link-kind");
 }
 
 #include "common/common_main.hpp.in"

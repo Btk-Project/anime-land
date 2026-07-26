@@ -1,7 +1,7 @@
 # Bangumi 模块设计索引
 
 > 文档状态：Living Design  
-> 当前阶段：浏览器登录闭环 + 公开条目搜索 + Collection Read 能力参考切片
+> 当前阶段：浏览器登录闭环 + 公开条目搜索/每日放送/详情/章节读取 + Collection Read 能力参考切片
 > 前端架构：View–Presentation–Model；CLI 当前使用 MVP Presenter，目标图形 View 使用 Qt Quick/QML ViewModel
 
 本文件只负责导航、当前状态和跨专题约束。协议细节、接口字段和测试清单放在专题文档中，避免每次修改都加载一份不断膨胀的总设计。
@@ -13,6 +13,9 @@
 | 登录、OAuth、回调、TokenStore、CLI | [login.md](login.md) | 从 App 配置到 `/v0/me` 验证的完整登录事务 |
 | 功能声明、八项权限、动态指导、权限不足交互 | [capabilities.md](capabilities.md) | `BangumiCapability`、`BangumiModuleOptions` 与 remediation 契约 |
 | 搜索条目 | [search.md](search.md) | 公开 POST 搜索、可选账号上下文、筛选、分页与 DTO |
+| 每日放送 | [calendar.md](calendar.md) | 公开 GET 时间表、七日 DTO、校验、UI 与缓存边界 |
+| 条目详情 | [subject.md](subject.md) | 公开 GET 完整 Subject、校验、Catalog 落库与本地优先边界 |
+| 读取章节 | [episodes.md](episodes.md) | 公开 GET 分页章节、DTO、校验与本地关联边界 |
 | 获取用户收藏 | [collections.md](collections.md) | 官方端点、分页、DTO、解析、权限语义与首个接口 |
 | 应用架构和目录边界 | [../arch.md](../arch.md) | View、Presentation、Model、Runtime 与迁移关系 |
 | 项目整体路线 | [../plan.md](../plan.md) | 播放器、数据层、同步和应用级规划 |
@@ -25,6 +28,10 @@
 - 打开浏览器前远程预检授权页，可识别已观察到的 `app_nonexistence`；Token 交换阶段补充 App Secret/回调错误提示。
 - 八项 Bangumi 权限使用位枚举表示；功能通过初始化 options 声明自己依赖的权限。
 - 公开条目搜索支持完整筛选和分页；未登录时匿名请求，活动会话存在时使用可选 Token，不注册或检查 capability。
+- 公开每日放送支持匿名 `GET /calendar`，将旧版七日响应映射为类型化 DTO，并校验七个唯一星期和条目基本字段。
+- 公开条目详情支持可选认证 `GET /v0/subjects/{id}`；每日放送点击会先抓取完整 Subject 与全部章节并写入 CatalogStore，之后详情页只读取数据库。
+- 公开章节读取支持匿名 `GET /v0/episodes` 和最多 200 条分页；当前由媒体关联流程消费并持久化为本地 Episode 快照。
+- `BangumiCalendarViewModel` 已将真实时间表接入首页今日摘要与 Bangumi 默认页签；加载、错误、刷新和星期选择不进入 QML JavaScript 业务逻辑。
 - `search` CLI 命令支持位置关键词、类型、排序、标签与分页；尽力复用已保存会话，恢复失败时继续匿名查询。
 - `MemoryTokenStore`、`FileTokenStore` 和默认的 `SystemTokenStore`；系统后端覆盖 Linux Secret Service、Windows Credential Manager 与 macOS Keychain。
 - 首个能力参考切片：读取当前登录用户的收藏，包含过滤、分页、DTO 映射和结构化权限修复信息。
@@ -34,7 +41,7 @@
 
 - 真实 Bangumi 账号的端到端人工验收。
 - Refresh Token 自动刷新。
-- 收藏的 Qt 交互。
+- 搜索和收藏的真实 QML ViewModel 接入。
 - 收藏写入、章节进度写入、缓存与同步。
 
 ## 跨专题约束
@@ -75,21 +82,25 @@ flowchart LR
 | `src/model/bangumi/auth.*` | OAuth、预检、回调和 Token 交换 |
 | `src/model/bangumi/capability.*` | 权限枚举元数据、功能声明、动态指导和修复错误 |
 | `src/model/bangumi/search.*` | 公开条目搜索请求、响应 DTO、编码与校验 |
+| `src/model/bangumi/calendar.*` | 公开每日放送请求、七日 DTO 与响应校验 |
+| `src/model/bangumi/subject.*` | 公开条目详情请求、Subject DTO 语义别名与响应校验 |
+| `src/model/bangumi/episode.*` | 公开分页章节请求、DTO 与响应校验 |
 | `src/model/bangumi/collection.*` | 收藏查询值对象、DTO、URL 和 JSON 映射 |
-| `src/model/bangumi/client.*` | `/v0/me`、公开搜索与收藏 HTTP 请求 |
+| `src/model/bangumi/client.*` | `/v0/me`、公开搜索、每日放送、条目详情、章节与收藏 HTTP 请求 |
 | `src/model/bangumi/bangumi.*` | Model 门面、状态和事务编排 |
 | `src/model/bangumi/config.*` | Token、错误模型和 TokenStore |
 | `src/presentation/bangumi/*` | 与具体前端无关的 Presenter 和 View 契约 |
 | `src/view/cli/*` | CLI 参数、命令分派、退出码和具体 View |
 
-Qt Quick/QML View 尚未实现；后续边界和迁移状态见[应用架构](../arch.md)。
+Qt Quick/QML 的每日放送和条目详情已接真实 Presentation ViewModel；搜索、收藏等页面仍使用 fixture。
+设置 `ANIME_LAND_UI_FIXTURE=1` 可令整个图形界面回到无网络的独立 View 调试模式。后续边界和迁移状态见[应用架构](../arch.md)。
 
 ## 外部依据
 
 - [Bangumi 开发者应用](https://bgm.tv/dev/app)
 - [Bangumi API 文档](https://bangumi.github.io/api/)
-- [Bangumi Server OpenAPI](https://github.com/bangumi/server/blob/master/openapi/v0.yaml)
+- [Bangumi v0 OpenAPI](https://github.com/bangumi/api/blob/master/open-api/v0.yaml)
 - [Bangumi 用户授权机制](https://github.com/bangumi/api/blob/master/docs-raw/How-to-Auth.md)
 - [Bangumi User-Agent 建议](https://github.com/bangumi/api/blob/master/docs-raw/user%20agent.md)
 
-外部协议核对日期：2026-07-23。
+外部协议核对日期：2026-07-26。

@@ -58,11 +58,15 @@ BangumiModule::BangumiModule(BangumiSettings settings, std::unique_ptr<TokenStor
 
 BangumiModule::~BangumiModule() {
     AL_LOG_DEBUG("[bangumi.module] shutting down");
-    mAuth.cancelLogin();
-    mClient.cancel();
+    cancelPendingOperations();
     if (mToken) {
         clearBangumiToken(*mToken);
     }
+}
+
+void BangumiModule::cancelPendingOperations() {
+    mAuth.cancelLogin();
+    mClient.cancel();
 }
 
 auto BangumiModule::hasOAuthApplication() const noexcept -> bool {
@@ -209,6 +213,71 @@ auto BangumiModule::searchSubjects(BangumiSubjectSearchQuery query)
     }
     AL_LOG_INFO("[bangumi.search] fetch completed returned={} total={}",
                 result->value.data.size(), result->value.total);
+    co_return result;
+}
+
+auto BangumiModule::getSubject(std::int64_t subjectId)
+    -> ilias::Task<BangumiResult<BangumiSubjectDetailsResponse>> {
+    AL_LOG_INFO("[bangumi.subject] fetch started subject_id={}", subjectId);
+    if (mNetworkConfigurationError) {
+        co_return ilias::Err(*mNetworkConfigurationError);
+    }
+
+    std::optional<QString> accessToken;
+    if (mToken && !mToken->accessToken.isEmpty()) {
+        accessToken = mToken->accessToken;
+    }
+    auto result =
+        co_await mClient.getSubject(subjectId, std::move(accessToken));
+    if (!result) {
+        AL_LOG_WARN("[bangumi.subject] fetch failed code={}",
+                    bangumiErrorCodeName(result.error().code));
+        co_return ilias::Err(std::move(result.error()));
+    }
+    AL_LOG_INFO("[bangumi.subject] fetch completed subject_id={}",
+                subjectId);
+    co_return result;
+}
+
+auto BangumiModule::getCalendar()
+    -> ilias::Task<BangumiResult<BangumiCalendarResponse>> {
+    AL_LOG_INFO("[bangumi.calendar] fetch started");
+    if (mNetworkConfigurationError) {
+        co_return ilias::Err(*mNetworkConfigurationError);
+    }
+
+    auto result = co_await mClient.getCalendar();
+    if (!result) {
+        AL_LOG_WARN("[bangumi.calendar] fetch failed code={}",
+                    bangumiErrorCodeName(result.error().code));
+        co_return ilias::Err(std::move(result.error()));
+    }
+
+    std::size_t subjectCount = 0;
+    for (const auto &day : result->value) {
+        subjectCount += day.items.size();
+    }
+    AL_LOG_INFO("[bangumi.calendar] fetch completed days={} subjects={}",
+                result->value.size(), subjectCount);
+    co_return result;
+}
+
+auto BangumiModule::getEpisodes(std::int64_t subjectId, int limit, int offset)
+    -> ilias::Task<BangumiResult<BangumiEpisodeResponse>> {
+    AL_LOG_INFO("[bangumi.episodes] fetch started subject_id={}", subjectId);
+    if (mNetworkConfigurationError) {
+        co_return ilias::Err(*mNetworkConfigurationError);
+    }
+
+    auto result = co_await mClient.getEpisodes(subjectId, limit, offset);
+    if (!result) {
+        AL_LOG_WARN("[bangumi.episodes] fetch failed code={}",
+                    bangumiErrorCodeName(result.error().code));
+        co_return ilias::Err(std::move(result.error()));
+    }
+    AL_LOG_INFO(
+        "[bangumi.episodes] fetch completed subject_id={} returned={} total={}",
+        subjectId, result->value.data.size(), result->value.total);
     co_return result;
 }
 

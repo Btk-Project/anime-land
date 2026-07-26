@@ -146,7 +146,7 @@ target("main")
     add_packages("libsodium", "neko-proto-tools", "ilias-sql", "ilias")
     add_deps("view", "presentation", "model")
     add_frameworks("QtCore", "QtGui", "QtNetwork", "QtQml", "QtQuick",
-                   "QtQuickControls2")
+                   "QtQuickControls2", "QtQuickDialogs2")
     add_files("src/*.cpp")
     add_options("enable_spdlog")
     on_load(function (target)

@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QtLogging>
@@ -11,10 +12,17 @@
 #include <nekoproto/argparser/argparser.hpp>
 
 #include "model/bangumi/bangumi.hpp"
+#include "model/library/local_media_import.hpp"
+#include "model/persistence/catalog_store.hpp"
+#include "model/persistence/database.hpp"
+#include "model/persistence/library_store.hpp"
 #include "common/app_settings.hpp"
 #include "common/config.h"
 #include "common/log.hpp"
 #include "presentation/bangumi/bangumi_presenter.hpp"
+#include "presentation/bangumi/calendar_view_model.hpp"
+#include "presentation/library/library_view_model.hpp"
+#include "presentation/library/subject_details_view_model.hpp"
 #include "view/cli/bangumi_cli_command.hpp"
 #include "view/cli/bangumi_cli_options.hpp"
 #include "view/cli/bangumi_cli_view.hpp"
@@ -156,6 +164,128 @@ auto runCommand(BangumiPresenter &presenter, BangumiView &view,
     application.exit(exitCode);
 }
 
+auto defaultConfigPath() -> QString {
+    return QStandardPaths::writableLocation(
+               QStandardPaths::AppConfigLocation)
+           + QStringLiteral("/settings.toml");
+}
+
+auto fixtureUiRequested() -> bool {
+    return qEnvironmentVariableIsSet("ANIME_LAND_UI_FIXTURE")
+           || qEnvironmentVariableIsSet("ANIME_LAND_UI_SMOKE_TEST");
+}
+
+auto resolveGraphicalDatabaseSettings(SqlSettings settings)
+    -> std::optional<SqlSettings> {
+    const QString databaseType =
+        QString::fromStdString(settings.database_type).toLower();
+    if (databaseType != QStringLiteral("sqlite")
+        && databaseType != QStringLiteral("sqlcipher")) {
+        return settings;
+    }
+
+    QString databasePath = QString::fromUtf8(settings.database_path);
+    if (QFileInfo(databasePath).isRelative()) {
+        const QString dataDirectory = QStandardPaths::writableLocation(
+            QStandardPaths::AppLocalDataLocation);
+        if (dataDirectory.isEmpty() || !QDir().mkpath(dataDirectory)) {
+            return std::nullopt;
+        }
+        databasePath = QDir(dataDirectory).filePath(databasePath);
+    }
+    else if (!QDir().mkpath(QFileInfo(databasePath).absolutePath())) {
+        return std::nullopt;
+    }
+    settings.database_path = QDir::cleanPath(databasePath).toUtf8().toStdString();
+    return settings;
+}
+
+auto runGraphicalApplication(QGuiApplication &application) -> int {
+    const bool fixtureMode = fixtureUiRequested();
+    if (fixtureMode) {
+        AL_LOG_INFO("[app.qml] starting isolated fixture mode");
+        return qml::runApplication(application, nullptr, nullptr, nullptr,
+                                   true);
+    }
+
+    GlobalAppSettingGuard globalSettings;
+    BangumiSettings bangumiSettings;
+    SqlSettings sqlSettings;
+    const QString configPath = defaultConfigPath();
+    const auto loaded = globalSettings.loadOrCreate(
+        QFileInfo(configPath).filesystemFilePath());
+    if (loaded) {
+        auto settings = globalSettings.get();
+        bangumiSettings = settings->bangumi_settings;
+        sqlSettings = settings->sql_settings;
+        AL_LOG_INFO("[app.qml] settings {}",
+                    *loaded == AppSettingsFileState::Created ? "created"
+                                                             : "loaded");
+    }
+    else {
+        AL_LOG_WARN("[app.qml] settings unavailable; using defaults");
+    }
+
+    TokenStoreOptions storeOptions;
+    storeOptions.kind = TokenStoreKind::Memory;
+    auto store = TokenStore::create(std::move(storeOptions));
+    if (!store) {
+        AL_LOG_ERROR("[app.qml] memory token store initialization failed");
+        return 2;
+    }
+
+    ilias::QIoContext ioContext;
+    ioContext.install();
+    auto resolvedSqlSettings =
+        resolveGraphicalDatabaseSettings(std::move(sqlSettings));
+    if (!resolvedSqlSettings) {
+        AL_LOG_ERROR("[app.qml] cannot create local data directory");
+        return 2;
+    }
+    auto databaseResult =
+        persistence::LocalDatabase::open(*resolvedSqlSettings).wait();
+    if (!databaseResult) {
+        AL_LOG_ERROR("[app.qml] local database open failed code={}",
+                     databaseResult.error().message());
+        return 2;
+    }
+    auto database = std::move(*databaseResult);
+    auto catalogStoreResult = persistence::CatalogStore::open(database).wait();
+    if (!catalogStoreResult) {
+        AL_LOG_ERROR("[app.qml] catalog store open failed code={}",
+                     catalogStoreResult.error().message());
+        return 2;
+    }
+    auto libraryStoreResult = persistence::LibraryStore::open(database).wait();
+    if (!libraryStoreResult) {
+        AL_LOG_ERROR("[app.qml] library store open failed code={}",
+                     libraryStoreResult.error().message());
+        return 2;
+    }
+
+    BangumiModule module(std::move(bangumiSettings), std::move(*store));
+    int exitCode = 0;
+    {
+        auto catalogStore = std::move(*catalogStoreResult);
+        auto libraryStore = std::move(*libraryStoreResult);
+        LocalMediaImportService importService(libraryStore, catalogStore,
+                                               module);
+        LibraryViewModel libraryViewModel(importService);
+        SubjectDetailsViewModel subjectDetailsViewModel(importService);
+        BangumiCalendarViewModel calendarViewModel(module);
+        AL_LOG_INFO("[app.qml] starting live model mode");
+        exitCode = qml::runApplication(application, &calendarViewModel,
+                                       &libraryViewModel,
+                                       &subjectDetailsViewModel, false);
+    }
+    auto closed = database.close().wait();
+    if (!closed) {
+        AL_LOG_WARN("[app.qml] local database close failed code={}",
+                    closed.error().message());
+    }
+    return exitCode;
+}
+
 } // namespace
 } // namespace anime_land
 
@@ -181,10 +311,10 @@ auto main(int argc, char **argv) -> int {
         QCoreApplication::setApplicationName(QStringLiteral("anime-land"));
         QCoreApplication::setApplicationVersion(
             QStringLiteral(ANIME_LAND_VERSION_STRING));
-        AL_LOG_INFO("[app] starting fixture QML shell version={}",
+        AL_LOG_INFO("[app] starting QML shell version={}",
                     ANIME_LAND_VERSION_STRING);
-        const int exitCode = qml::runApplication(application);
-        AL_LOG_INFO("[app] stopped fixture QML shell exit_code={}", exitCode);
+        const int exitCode = runGraphicalApplication(application);
+        AL_LOG_INFO("[app] stopped QML shell exit_code={}", exitCode);
         return exitCode;
     }
 
@@ -226,11 +356,8 @@ auto main(int argc, char **argv) -> int {
 
     cli::BangumiCliView view;
     GlobalAppSettingGuard globalSettings;
-    const QString defaultConfigPath =
-        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-        QStringLiteral("/settings.toml");
     const QString configPath =
-        selectedConfigPath(command).value_or(defaultConfigPath);
+        selectedConfigPath(command).value_or(defaultConfigPath());
     AL_LOG_DEBUG("[app.config] loading path={}", configPath.toStdString());
 
     const std::filesystem::path configFilePath =

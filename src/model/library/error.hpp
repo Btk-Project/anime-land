@@ -16,6 +16,16 @@ enum class LibraryErrorCode {
     InvalidDuration,
     InvalidPosition,
     InvalidTimestamp,
+    EmptyImport,
+    InvalidMediaUrl,
+    MediaFileNotFound,
+    MediaFileUnreadable,
+    MediaItemNotFound,
+    InvalidMediaDescriptor,
+    MediaLaunchFailed,
+    RemoteLookupFailure,
+    InvalidMediaLinkKind,
+    PersistenceFailure,
 };
 
 struct LibraryError {

@@ -7,9 +7,39 @@ Item {
     signal openSubject(var subject)
 
     property int currentTab: 0
+    property int fixtureSelectedWeekday: FixtureData.currentWeekdayId()
+    property bool fixtureCollectionOnly: false
+
+    readonly property var calendarDays: uiFixtureMode
+        ? FixtureData.calendarDays : calendarViewModel.days
+    readonly property int selectedWeekday: uiFixtureMode
+        ? fixtureSelectedWeekday : calendarViewModel.selectedWeekday
+    readonly property var selectedCalendarDay: {
+        if (uiFixtureMode)
+            return FixtureData.calendarDay(fixtureSelectedWeekday)
+        return {
+            "id": calendarViewModel.selectedWeekday,
+            "label": calendarViewModel.selectedWeekdayLabel,
+            "items": calendarViewModel.selectedItems
+        }
+    }
+    readonly property bool calendarLoading:
+        !uiFixtureMode && calendarViewModel.loading
+    readonly property string calendarError: uiFixtureMode
+        ? "" : calendarViewModel.errorMessage
     property var visibleSubjects: {
-        const base = currentTab === 0
-                ? FixtureData.bangumiSubjects : FixtureData.subjects.slice(0, 4)
+        if (currentTab === 0) {
+            const items = selectedCalendarDay.items
+            if (!uiFixtureMode || !fixtureCollectionOnly)
+                return items
+            return items.filter(function(subject) {
+                return subject.progress > 0 && subject.progress < 1
+            })
+        }
+
+        const base = currentTab === 1
+                ? FixtureData.bangumiSubjects
+                : FixtureData.subjects.slice(0, 4)
         const query = searchField.text.trim().toLowerCase()
         if (query.length === 0)
             return base
@@ -17,6 +47,13 @@ Item {
             return subject.title.toLowerCase().indexOf(query) >= 0
                     || subject.subtitle.toLowerCase().indexOf(query) >= 0
         })
+    }
+
+    function selectWeekday(weekday) {
+        if (uiFixtureMode)
+            fixtureSelectedWeekday = weekday
+        else
+            calendarViewModel.selectedWeekday = weekday
     }
 
     Flickable {
@@ -36,22 +73,30 @@ Item {
             PageHeader {
                 width: parent.width
                 title: "Bangumi"
-                subtitle: "搜索远端条目，或查看账户收藏。"
+                subtitle: uiFixtureMode
+                    ? "使用 fixture 调试每日放送、搜索与收藏界面。"
+                    : "每日放送已连接真实数据；搜索与收藏仍使用 fixture。"
             }
 
             Row {
                 spacing: 10
 
                 AppButton {
-                    text: "搜索"
+                    text: "每日放送"
                     primary: root.currentTab === 0
                     onClicked: root.currentTab = 0
                 }
 
                 AppButton {
-                    text: "我的收藏"
+                    text: "搜索"
                     primary: root.currentTab === 1
                     onClicked: root.currentTab = 1
+                }
+
+                AppButton {
+                    text: "我的收藏"
+                    primary: root.currentTab === 2
+                    onClicked: root.currentTab = 2
                 }
 
                 Rectangle {
@@ -63,17 +108,57 @@ Item {
 
                 AppText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.currentTab === 1 ? "Fixture 账户：已登录" : "公开搜索"
+                    text: {
+                        if (root.currentTab === 0)
+                            return uiFixtureMode ? "Fixture 时间表" : "真实时间表"
+                        if (root.currentTab === 1)
+                            return "Fixture 搜索"
+                        return "Fixture 账户"
+                    }
                     color: Theme.textMuted
                     font.pixelSize: Theme.captionSize
                 }
             }
 
+            Row {
+                visible: root.currentTab === 0
+                spacing: 8
+
+                Repeater {
+                    model: root.calendarDays
+
+                    AppButton {
+                        text: modelData.shortLabel
+                        primary: root.selectedWeekday === modelData.id
+                        implicitWidth: 46
+                        onClicked: root.selectWeekday(modelData.id)
+                    }
+                }
+
+                Item { width: 4; height: 1 }
+
+                AppButton {
+                    visible: uiFixtureMode
+                    text: "只看在看"
+                    primary: root.fixtureCollectionOnly
+                    onClicked: root.fixtureCollectionOnly =
+                               !root.fixtureCollectionOnly
+                }
+
+                AppButton {
+                    visible: !uiFixtureMode
+                    text: root.calendarLoading ? "加载中" : "刷新"
+                    enabled: !root.calendarLoading
+                    onClicked: calendarViewModel.refresh()
+                }
+            }
+
             TextField {
                 id: searchField
+                visible: root.currentTab !== 0
                 width: Math.min(520, parent.width)
-                height: 40
-                placeholderText: root.currentTab === 0
+                height: visible ? 40 : 0
+                placeholderText: root.currentTab === 1
                                  ? "搜索 Bangumi 动画条目"
                                  : "筛选我的收藏"
                 color: Theme.text
@@ -92,10 +177,39 @@ Item {
                 }
             }
 
+            AppText {
+                visible: root.currentTab === 0
+                         && (root.calendarLoading
+                             || root.calendarError.length > 0)
+                width: parent.width
+                text: root.calendarLoading
+                    ? "正在从 Bangumi 加载每日放送……"
+                    : root.calendarError
+                color: root.calendarError.length > 0
+                       ? Theme.danger : Theme.textMuted
+                font.pixelSize: Theme.bodySize
+                wrapMode: Text.Wrap
+            }
+
             SectionHeader {
                 width: parent.width
-                title: root.currentTab === 0 ? "搜索结果" : "在看与收藏"
-                detail: root.visibleSubjects.length + " 个条目"
+                title: {
+                    if (root.currentTab === 0) {
+                        const label = root.selectedCalendarDay.label
+                        return label.length > 0 ? label + "放送" : "每日放送"
+                    }
+                    if (root.currentTab === 1)
+                        return "搜索结果"
+                    return "在看与收藏"
+                }
+                detail: {
+                    if (root.currentTab === 0 && root.calendarLoading)
+                        return "正在加载"
+                    if (root.currentTab === 0
+                            && root.calendarError.length > 0)
+                        return "加载失败"
+                    return root.visibleSubjects.length + " 个条目"
+                }
             }
 
             Flow {
@@ -108,9 +222,21 @@ Item {
 
                     SubjectCard {
                         subject: modelData
+                        statusText: modelData.status
                         onActivated: selected => root.openSubject(selected)
                     }
                 }
+            }
+
+            AppText {
+                visible: !root.calendarLoading
+                         && root.calendarError.length === 0
+                         && root.visibleSubjects.length === 0
+                width: parent.width
+                text: root.currentTab === 0 && root.fixtureCollectionOnly
+                      ? "这一天没有正在观看的条目。" : "没有匹配的条目。"
+                color: Theme.textMuted
+                font.pixelSize: Theme.bodySize
             }
 
             Item { width: 1; height: 16 }

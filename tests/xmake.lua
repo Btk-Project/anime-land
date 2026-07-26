@@ -38,6 +38,7 @@ local function default_test_config(file)
         config.qt_frameworks = {"QtCore", "QtNetwork"}
     elseif group == "presentation" then
         config.deps = {"presentation"}
+        config.qt_frameworks = {"QtCore", "QtNetwork", "QtQml"}
     elseif group == "cli" then
         config.group = "view"
         config.deps = {"view"}

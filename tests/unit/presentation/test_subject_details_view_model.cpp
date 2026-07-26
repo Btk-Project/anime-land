@@ -1,0 +1,219 @@
+#include <gtest/gtest.h>
+
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
+
+#include <ilias/platform/qt.hpp>
+
+#include "presentation/library/subject_details_view_model.hpp"
+
+#include <chrono>
+#include <optional>
+#include <vector>
+
+using namespace anime_land;
+using namespace std::chrono_literals;
+
+namespace {
+
+auto sampleDetails() -> SubjectLibraryDetails {
+    return {
+        .subject =
+            {
+                .summary =
+                    {
+                        .id = SubjectId {21},
+                        .subjectType = 2,
+                        .title = QStringLiteral("Sousou no Frieren"),
+                        .titleCn = QStringLiteral("葬送的芙莉莲"),
+                        .summary = QStringLiteral("冒险结束后的故事"),
+                    },
+                .airDate = QDate(2023, 9, 29),
+                .tags = {{.name = QStringLiteral("治愈"),
+                          .providerKey = QStringLiteral("bangumi"),
+                          .weight = 1200.0}},
+                .externalRefs = {{
+                    .ref = {.providerKey = QStringLiteral("bangumi"),
+                            .externalId = QStringLiteral("400602")},
+                    .fetchedAt = QDateTime::currentDateTimeUtc(),
+                    .remoteUpdatedAt = std::nullopt,
+                }},
+            },
+        .episodes = {{
+            .episode =
+                {
+                    .id = EpisodeId {31},
+                    .subjectId = SubjectId {21},
+                    .sortOrder = 0,
+                    .episodeType = 0,
+                    .episodeNumber = 1.0,
+                    .title = QStringLiteral("The Journey's End"),
+                    .titleCn = QStringLiteral("冒险的终点"),
+                    .duration = 24min,
+                },
+            .media = {{
+                .resource =
+                    {
+                        .id = MediaResourceId {7},
+                        .providerKey = QStringLiteral("local-file"),
+                        .stableKey = QStringLiteral("d:/anime/frieren"),
+                        .descriptorVersion = 1,
+                        .descriptor = QByteArrayLiteral(
+                            R"({"directory":"D:/Anime/Frieren"})"),
+                        .displayName = QStringLiteral("Frieren"),
+                    },
+                .item =
+                    {
+                        .id = SourceItemId {11},
+                        .resourceId = MediaResourceId {7},
+                        .stableKey = QStringLiteral("episode-01.mkv"),
+                        .descriptor = QByteArrayLiteral(
+                            R"({"relativePath":"episode-01.mkv"})"),
+                        .displayName = QStringLiteral("episode-01.mkv"),
+                        .duration = 24min,
+                    },
+            }},
+        }},
+    };
+}
+
+void processUntilSettled(SubjectDetailsViewModel &viewModel) {
+    QElapsedTimer timer;
+    timer.start();
+    while ((viewModel.loading() || viewModel.playing())
+           && timer.elapsed() < 1000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    }
+}
+
+} // namespace
+
+TEST(SubjectDetailsViewModel, MapsDatabaseSubjectEpisodesAndLinkedMedia) {
+    SubjectId loadedSubject;
+    SubjectDetailsViewModel viewModel(
+        [&loadedSubject](SubjectId subject)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            loadedSubject = subject;
+            co_return std::optional<SubjectLibraryDetails> {sampleDetails()};
+        });
+
+    viewModel.openSubject(21);
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(loadedSubject, SubjectId {21});
+    EXPECT_TRUE(viewModel.hasSubject());
+    EXPECT_EQ(viewModel.playableEpisodeCount(), 1);
+    EXPECT_TRUE(viewModel.errorMessage().isEmpty());
+    const auto subject = viewModel.subject();
+    EXPECT_EQ(subject.value(QStringLiteral("title")).toString(),
+              QStringLiteral("葬送的芙莉莲"));
+    EXPECT_EQ(subject.value(QStringLiteral("bangumiId")).toLongLong(),
+              400602);
+    ASSERT_EQ(viewModel.episodes().size(), 1);
+    const auto episode = viewModel.episodes().front().toMap();
+    EXPECT_EQ(episode.value(QStringLiteral("id")).toLongLong(), 31);
+    EXPECT_EQ(episode.value(QStringLiteral("number")).toString(),
+              QStringLiteral("EP1"));
+    EXPECT_EQ(episode.value(QStringLiteral("title")).toString(),
+              QStringLiteral("冒险的终点"));
+    EXPECT_EQ(episode.value(QStringLiteral("source")).toString(),
+              QStringLiteral("episode-01.mkv"));
+    EXPECT_EQ(episode.value(QStringLiteral("duration")).toString(),
+              QStringLiteral("24:00"));
+    EXPECT_TRUE(episode.value(QStringLiteral("linked")).toBool());
+}
+
+TEST(SubjectDetailsViewModel, ResolvesBangumiIdentityBeforeDatabaseLoad) {
+    std::int64_t receivedBangumiId = 0;
+    SubjectDetailsViewModel viewModel(
+        [](SubjectId)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            co_return std::optional<SubjectLibraryDetails> {sampleDetails()};
+        },
+        [&receivedBangumiId](std::int64_t bangumiId)
+            -> ilias::Task<LibraryResult<SubjectId>> {
+            receivedBangumiId = bangumiId;
+            co_return SubjectId {21};
+        });
+
+    viewModel.openBangumiSubject(400602);
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(receivedBangumiId, 400602);
+    EXPECT_TRUE(viewModel.hasSubject());
+    EXPECT_EQ(viewModel.subject()
+                  .value(QStringLiteral("subjectId"))
+                  .toLongLong(),
+              21);
+}
+
+TEST(SubjectDetailsViewModel, ReportsRemoteCatalogSyncFailure) {
+    SubjectDetailsViewModel viewModel(
+        {}, [](std::int64_t)
+                -> ilias::Task<LibraryResult<SubjectId>> {
+            co_return ilias::Err(libraryError(
+                LibraryErrorCode::RemoteLookupFailure,
+                QStringLiteral("无法读取 Bangumi 条目详情")));
+        });
+
+    viewModel.openBangumiSubject(400602);
+    processUntilSettled(viewModel);
+
+    EXPECT_FALSE(viewModel.hasSubject());
+    EXPECT_TRUE(viewModel.errorMessage().contains(
+        QStringLiteral("无法读取 Bangumi 条目详情")));
+}
+
+TEST(SubjectDetailsViewModel, LabelsEpisodeWithoutPublishedTitle) {
+    SubjectDetailsViewModel viewModel(
+        [](SubjectId)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            auto details = sampleDetails();
+            details.episodes.front().episode.title.reset();
+            details.episodes.front().episode.titleCn.reset();
+            co_return std::optional<SubjectLibraryDetails> {
+                std::move(details)};
+        });
+
+    viewModel.openSubject(21);
+    processUntilSettled(viewModel);
+
+    ASSERT_EQ(viewModel.episodes().size(), 1);
+    const auto episode = viewModel.episodes().front().toMap();
+    EXPECT_EQ(episode.value(QStringLiteral("title")).toString(),
+              QStringLiteral("标题待公布"));
+}
+
+TEST(SubjectDetailsViewModel, PlaysFirstLinkedEpisodeByLocalIdentity) {
+    EpisodeId playedEpisode;
+    SubjectDetailsViewModel viewModel(
+        [](SubjectId)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            co_return std::optional<SubjectLibraryDetails> {sampleDetails()};
+        }, {},
+        [&playedEpisode](EpisodeId episode)
+            -> ilias::Task<LibraryResult<void>> {
+            playedEpisode = episode;
+            co_return LibraryResult<void> {};
+        });
+
+    viewModel.openSubject(21);
+    processUntilSettled(viewModel);
+    viewModel.playFirstAvailable();
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(playedEpisode, EpisodeId {31});
+    EXPECT_EQ(viewModel.noticeMessage(),
+              QStringLiteral("已交给系统默认播放器打开"));
+}
+
+#define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \
+  QCoreApplication qtApplication(argc, argv);                                 \
+  ilias::QIoContext ioContext;                                                 \
+  ioContext.install()
+#include "common/common_main.hpp.in"

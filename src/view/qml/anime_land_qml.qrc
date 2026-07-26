@@ -10,6 +10,7 @@
         <file>PageHeader.qml</file>
         <file>SectionHeader.qml</file>
         <file>SubjectCard.qml</file>
+        <file>MediaItemCard.qml</file>
         <file>EpisodeRow.qml</file>
         <file>SettingCard.qml</file>
         <file>HomePage.qml</file>

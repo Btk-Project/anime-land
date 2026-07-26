@@ -59,7 +59,7 @@
 v0.1 应形成以下完整闭环：
 
 1. 启动桌面应用。
-2. 搜索和浏览 Bangumi 动画条目。
+2. 通过每日放送或搜索浏览 Bangumi 动画条目。
 3. 查看条目详情及章节列表。
 4. 选择本地媒体文件。
 5. 将本地文件关联到 Bangumi 条目和章节。
@@ -521,8 +521,9 @@ struct PlaybackProgress {
 
 本地条目、章节 ID 和外部身份的当前边界以
 [`database/local_database_design.md`](database/local_database_design.md) 为准。媒体资源根、
-可播放项、章节关联和播放进度的领域类型已经落地；持久化关系、事务和生命周期见
-[`library/library_design.md`](library/library_design.md)，Store 仍待实现。
+可播放项、章节关联和播放进度的领域类型已经落地；媒体资源和章节关联的持久化关系、
+事务和生命周期见 [`library/library_design.md`](library/library_design.md)，播放进度 Store
+仍待实现。
 UI 和播放层不得直接把 Bangumi ID、文件路径或 provider 私有 descriptor 当作核心
 对象身份。
 
@@ -560,10 +561,10 @@ public:
 
 ### 表结构
 
-当前 CatalogStore 的表结构、Form 生命周期、Store API 和事务边界以
+当前 CatalogStore 与 LibraryStore 的表结构、Form 生命周期、Store API 和事务边界以
 [`database/local_database_design.md`](database/local_database_design.md) 为实施契约。本节
-不再维护一份容易漂移的表名副本。Library 所需的媒体资源、章节关联和播放进度关系
-尚未纳入当前六个目录关系，不能把计划中的 C++ 结构当成已经冻结的数据库 Schema。
+不再维护一份容易漂移的表名副本。Library 的媒体资源、可播放项和章节关联已落地为
+当前九个关系；播放进度仍未纳入数据库，不能把计划中的 C++ 结构当成已经冻结的 Schema。
 
 `bangumi_cache`、`sync_queue`、账号同步和图片二进制缓存不属于 v0.1 核心数据库；
 已经浏览过的条目通过标准化 `subjects`、`tags` 和 `episodes` 数据离线可读。
@@ -795,6 +796,7 @@ docs/adr/
 ### [并行-B]
 
 - 实现 Bangumi 搜索。
+- 实现 Bangumi 每日放送浏览和短期缓存。
 - 实现条目详情和章节列表。
 - 持久化已浏览条目的标准化目录数据。
 - 实现本地文件导入。
@@ -1185,6 +1187,7 @@ v0.1 必须满足：
 
 ### Milestone：Local Playback
 
+- [x] 实现 SourceItemId 到系统默认播放器的安全过渡入口
 - [ ] 实现真实 PlaybackSession
 - [ ] 接入 nekoav Pipeline
 - [ ] 移除示例中的所有 `.wait()`
@@ -1197,11 +1200,17 @@ v0.1 必须满足：
 ### Milestone：Bangumi Library
 
 - [ ] 实现 Bangumi Client
+- [x] 实现每日放送协议、Calendar ViewModel、真实 QML 接线与 fixture 开关
 - [ ] 实现搜索页
-- [ ] 实现条目详情
-- [ ] 实现章节列表
-- [ ] 实现媒体扫描
-- [ ] 实现文件关联
+- [x] 实现已落库条目的真实数据库详情、章节列表和关联媒体播放入口
+- [x] 实现未落库远端条目点击时的完整详情抓取与持久化
+- [x] 实现 Details 新鲜期与连载 Episode 标题的原记录刷新
+- [x] 实现关联流程使用的公开章节 GET 协议与章节选择列表
+- [x] 实现用户显式选择文件、LibraryStore 持久化与媒体库 QML 导入
+- [x] 实现未关联媒体父目录分组、右键移除与空资源清理
+- [x] 实现 EpisodeMediaLink 关系、手动优先级、双向查询与解除 API
+- [ ] 实现递归媒体扫描
+- [x] 实现文件与 Bangumi 章节手动关联、解除和状态展示
 - [ ] 实现最近播放
 - [ ] 实现自动文件名匹配初版
 

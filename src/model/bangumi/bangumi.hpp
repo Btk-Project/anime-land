@@ -46,7 +46,14 @@ public:
     auto login() -> ilias::Task<BangumiResult<BangumiUser>>;
     auto logout() -> ilias::Task<BangumiResult<void>>;
     auto searchSubjects(BangumiSubjectSearchQuery query) -> ilias::Task<BangumiResult<BangumiSubjectSearchResponse>>;
+    auto getSubject(std::int64_t subjectId)
+        -> ilias::Task<BangumiResult<BangumiSubjectDetailsResponse>>;
+    auto getCalendar() -> ilias::Task<BangumiResult<BangumiCalendarResponse>>;
+    auto getEpisodes(std::int64_t subjectId, int limit = 200, int offset = 0)
+        -> ilias::Task<BangumiResult<BangumiEpisodeResponse>>;
     auto getCurrentUserCollections(BangumiCollectionQuery query = {}) -> ilias::Task<BangumiResult<BangumiUserCollectionsResponse>>;
+    /** Cancels active network/auth work without clearing the saved session. */
+    void cancelPendingOperations();
 
     auto hasOAuthApplication() const noexcept -> bool;
     auto oauthApplicationGuide() const -> BangumiOAuthApplicationGuide;

@@ -3,6 +3,7 @@
 > 文档状态：Living Design  
 > 架构范围：应用模块、依赖方向、前端边界和从当前代码到目标目录的迁移关系  
 > 前端决策：主图形界面使用 Qt Quick/QML；CLI 作为独立 View 适配器保留
+> 当前工作接力：[HANDOFF.md](HANDOFF.md)
 
 本文是项目架构和目录归属的主文档。产品范围、阶段和验收标准见
 [plan.md](plan.md)；Bangumi、数据库等协议与实现细节由各专题文档维护。
@@ -61,7 +62,7 @@ src/
 │  ├─ qml/                    # 正式 Qt Quick 页面和组件
 │  └─ cli/                    # CLI View 适配器
 ├─ presentation/
-│  ├─ bangumi/                # 登录、搜索、收藏 Presenter/ViewModel
+│  ├─ bangumi/                # 登录、每日放送、搜索、收藏 Presenter/ViewModel
 │  ├─ playback/               # 播放 UI 状态和用户命令映射
 │  └─ library/                # 媒体库、条目和章节 UI 状态
 ├─ model/
@@ -121,6 +122,23 @@ QML。CLI 可以保留自己的具体 View，不要求与 QML 共享渲染接口
 用例和错误语义。当前 fixture 主界面和页面设计见
 [view/qml_ui_design.md](view/qml_ui_design.md)。
 
+首个真实 QML 切片是 `BangumiCalendarViewModel`：composition root 创建 Module 与
+ViewModel，View 只获得后者。`ANIME_LAND_UI_FIXTURE=1` 绕过这条装配链并使用静态数据，
+用于单独修改 View；fixture 开关不得散落到 Model 或协议代码中。
+
+媒体库是第二个真实切片：`LibraryViewModel` 只调用
+`LocalMediaImportService`，负责加载状态、导入/移除反馈、扁平媒体与父目录资源组的 UI
+DTO 映射；QML 文件选择器只把用户明确选择的本地 URL 交给 ViewModel，右键移除只提交
+本地 `SourceItemId`，两者都不接触 Store、SQL 或 provider descriptor。
+
+条目详情是第三个真实切片：`SubjectDetailsViewModel` 通过应用服务取得 Catalog 的
+Subject/Episode 与 Library 的 EpisodeMediaLink/SourceItem 合并快照，再映射为 QML DTO。
+本地导航只传 `SubjectId` 或 Bangumi 外部身份，章节播放只传 `EpisodeId`；Presentation
+和 QML 都不直接跨 Store 查询。fixture 模式仍可独立渲染静态详情；真实模式遇到尚未写入
+CatalogStore 的远端条目时，由 Model 先读取 Bangumi 完整 Subject/章节并持久化，再按本地
+`SubjectId` 重新读取详情，不得把远端 DTO 或 fixture 直接交给页面。已有 Details 快照直接
+离线复用，已有 Summary 在远端升级失败时仍可作为本地回退。
+
 ## 5. Model 子模块
 
 ### 5.1 Bangumi
@@ -128,8 +146,12 @@ QML。CLI 可以保留自己的具体 View，不要求与 QML 共享渲染接口
 负责 OAuth、API Client、权限能力、TokenStore、会话状态以及对 Presentation 暴露的
 `BangumiModule` 门面。具体协议见 [bangumi/README.md](bangumi/README.md)。
 
-公开搜索可以匿名执行；账号收藏等受保护用例必须通过 Module 检查会话和功能声明。
+公开搜索和每日放送可以匿名执行；账号收藏等受保护用例必须通过 Module 检查会话和功能声明。
 Token 不进入普通设置、业务数据库、View 或日志。
+
+每日放送是短期远端浏览数据：完整页属于 Bangumi，首页只消费其今日摘要。它不进入
+`LibraryStore`；缓存、Presentation 状态和时间语义见
+[bangumi/calendar.md](bangumi/calendar.md)。
 
 ### 5.2 Playback
 
@@ -143,6 +165,11 @@ Token 不进入普通设置、业务数据库、View 或日志。
 
 `presentation/playback` 只持有 Session 门面，负责将 UI 操作映射为命令，并将 Snapshot
 映射为界面状态。
+
+在 nekoav/PlaybackSession 落地前，Library 目前提供一个过渡的外部播放入口：View 只
+提交 `SourceItemId`，Model 解析并校验 `local-file` descriptor 后调用系统默认播放器。
+它不是内置 PlaybackSession，不提供暂停、Seek、视频渲染或进度；后续替换其内部实现时
+不得把路径解析迁回 QML。
 
 ### 5.3 Library
 
@@ -166,8 +193,14 @@ UI 和播放层不得把 Bangumi ID、文件路径或 provider 私有 descriptor
 ### 5.4 Persistence
 
 `LocalDatabase` 只负责连接；具体 Store 负责自己的关系、长期 Form、事务和类型化
-查询。当前 `CatalogStore` 管理条目、外部身份、标签和章节六个关系。媒体资源、章节
-关联和播放进度应由后续 Library Store 定义，不混入 Bangumi 协议 DTO。
+查询。当前 `CatalogStore` 管理条目、外部身份、标签和章节六个关系，`LibraryStore`
+管理 `media_resources`、`source_items` 与 `episode_media_links`，并在单个子项移除后
+事务化清理空资源；该操作不删除 provider 指向的磁盘文件。章节关联已支持事务 upsert、
+双向查询、解除、级联清理和真实手动关联 UI；播放进度仍由后续 Store 增量加入。
+所有关系都不得混入 Bangumi 协议 DTO。
+
+`episode_media_links` 跨越两个 Store 的表所有权，因此 Runtime 必须先打开
+`CatalogStore`，再打开 `LibraryStore`；退出时按相反所有权顺序销毁，然后关闭数据库。
 
 所有业务写入必须在统一数据库执行域串行化。不得删除、覆盖或清洗调用方已有对象；
 当前没有真实跨版本转换时不虚构 migration。详细契约见
@@ -202,11 +235,11 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 
 | 当前目录 | 当前状态 |
 | --- | --- |
-| `src/model/bangumi/` | 登录、搜索、收藏读取已实现 |
-| `src/model/persistence/` | CatalogStore 已实现，尚未接入主流程 |
-| `src/presentation/bangumi/` | Presenter 已与 CLI 参数类型解耦 |
+| `src/model/bangumi/` | 登录、搜索、每日放送、公开章节读取、收藏读取已实现 |
+| `src/model/persistence/` | CatalogStore 与 LibraryStore 已实现；后者支持媒体导入/移除和 EpisodeMediaLink 持久化 |
+| `src/presentation/{bangumi,library}/` | Calendar 与 Library QObject ViewModel 已接入 QML；Library 支持目录组、关联、解除和外部播放状态 |
 | `src/view/cli/` | CLI 参数、命令分派、查询转换、退出码和具体 View |
-| `src/view/qml/` | fixture 应用壳、主题、六个主要页面和公共组件已实现，真实 ViewModel 待接入 |
+| `src/view/qml/` | 每日放送与媒体导入/分组/关联/播放/移除使用真实 ViewModel；其余页面保留 fixture；支持全局 fixture 调试开关 |
 | `tests/unit/model/{bangumi,persistence}/` | Model 单元测试已随模块迁移 |
 | `tests/unit/view/cli/` | CLI 参数测试已随 View 迁移 |
 
@@ -215,9 +248,9 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 | 当前入口 | 目标目录 | 状态 |
 | --- | --- | --- |
 | `src/main.cpp` 中的装配代码 | `src/runtime/` | 尚未抽取 AppRuntime |
-| QML fixture | `src/view/qml/` | 页面和导航骨架已实现，待逐页替换为真实 Presentation 数据 |
+| QML 双模式界面 | `src/view/qml/` | Calendar 与 Library 导入已真实接线，其余页面待逐页替换；fixture 模式长期保留 |
 | 无 | `src/model/playback/` | 尚未实现 PlaybackSession |
-| Library 领域设计 | `src/model/library/` | 已实现稳定身份、媒体资源、可播放项、章节关联、进度与校验；Store 和闭环待实现 |
+| Library 领域设计 | `src/model/library/` | 已实现稳定身份、显式导入/移除、手动章节关联和系统播放器过渡入口；进度与内置播放闭环待实现 |
 | 无 | `src/media/` | 尚未接入 nekoav、媒体 I/O 和 Renderer |
 
 后续迁移应随对应功能修改逐步进行，不为目录整洁单独制造没有行为收益的大规模重命名。

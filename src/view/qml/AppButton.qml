@@ -15,7 +15,9 @@ Button {
 
     contentItem: AppText {
         text: control.text
-        color: control.primary ? Theme.accentText : Theme.text
+        color: !control.enabled
+               ? Theme.textFaint
+               : (control.primary ? Theme.accentText : Theme.text)
         font.pixelSize: Theme.bodySize
         font.weight: control.primary ? Font.DemiBold : Font.Normal
         horizontalAlignment: Text.AlignHCenter
@@ -26,7 +28,9 @@ Button {
     background: Rectangle {
         radius: Theme.radiusSmall
         border.width: control.quiet ? 0 : 1
-        border.color: control.primary ? Theme.accent : Theme.border
+        border.color: !control.enabled
+                      ? Theme.border
+                      : (control.primary ? Theme.accent : Theme.border)
         color: {
             if (!control.enabled)
                 return Theme.surface

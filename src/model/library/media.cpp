@@ -26,6 +26,26 @@ auto libraryErrorCodeName(LibraryErrorCode code) -> std::string_view {
             return "invalid-position";
         case LibraryErrorCode::InvalidTimestamp:
             return "invalid-timestamp";
+        case LibraryErrorCode::EmptyImport:
+            return "empty-import";
+        case LibraryErrorCode::InvalidMediaUrl:
+            return "invalid-media-url";
+        case LibraryErrorCode::MediaFileNotFound:
+            return "media-file-not-found";
+        case LibraryErrorCode::MediaFileUnreadable:
+            return "media-file-unreadable";
+        case LibraryErrorCode::MediaItemNotFound:
+            return "media-item-not-found";
+        case LibraryErrorCode::InvalidMediaDescriptor:
+            return "invalid-media-descriptor";
+        case LibraryErrorCode::MediaLaunchFailed:
+            return "media-launch-failed";
+        case LibraryErrorCode::RemoteLookupFailure:
+            return "remote-lookup-failure";
+        case LibraryErrorCode::InvalidMediaLinkKind:
+            return "invalid-media-link-kind";
+        case LibraryErrorCode::PersistenceFailure:
+            return "persistence-failure";
     }
     return "unknown";
 }
@@ -71,12 +91,72 @@ auto validate(const SourceItem &item) -> LibraryResult<void> {
     return {};
 }
 
+auto validate(const MediaResourceSnapshot &resource) -> LibraryResult<void> {
+    if (resource.providerKey.trimmed().isEmpty()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidProviderKey,
+            QStringLiteral("媒体资源 providerKey 不能为空")));
+    }
+    if (resource.stableKey.trimmed().isEmpty()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidStableKey,
+            QStringLiteral("媒体资源 stableKey 不能为空")));
+    }
+    if (resource.descriptorVersion <= 0) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidDescriptorVersion,
+            QStringLiteral("媒体资源 descriptorVersion 必须为正数")));
+    }
+    return {};
+}
+
+auto validate(const SourceItemSnapshot &item) -> LibraryResult<void> {
+    if (item.stableKey.trimmed().isEmpty()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidStableKey,
+            QStringLiteral("媒体项 stableKey 不能为空")));
+    }
+    if (item.duration && *item.duration < std::chrono::milliseconds::zero()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidDuration,
+            QStringLiteral("媒体项时长不能为负数")));
+    }
+    return {};
+}
+
+auto validate(const MediaDiscovery &discovery) -> LibraryResult<void> {
+    if (auto resource = validate(discovery.resource); !resource) {
+        return resource;
+    }
+    if (!discovery.observedAt.isValid()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidTimestamp,
+            QStringLiteral("媒体发现时间无效")));
+    }
+    for (const auto &item : discovery.items) {
+        if (auto validated = validate(item); !validated) {
+            return validated;
+        }
+    }
+    return {};
+}
+
 auto validate(const EpisodeMediaLink &link) -> LibraryResult<void> {
     if (!isValid(link.episodeId) || !isValid(link.sourceItemId)) {
         return ilias::Err(libraryError(LibraryErrorCode::InvalidIdentity, QStringLiteral("章节关联包含无效 ID")));
     }
     if (!link.updatedAt.isValid()) {
         return ilias::Err(libraryError(LibraryErrorCode::InvalidTimestamp, QStringLiteral("章节关联更新时间无效")));
+    }
+    switch (link.kind) {
+        case MediaLinkKind::Manual:
+        case MediaLinkKind::Filename:
+        case MediaLinkKind::Sequence:
+            break;
+        default:
+            return ilias::Err(libraryError(
+                LibraryErrorCode::InvalidMediaLinkKind,
+                QStringLiteral("章节关联来源无效")));
     }
     return {};
 }

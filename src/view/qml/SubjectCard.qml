@@ -4,6 +4,7 @@ Rectangle {
     id: root
 
     property var subject
+    property string statusText: subject ? subject.status : ""
     signal activated(var subject)
 
     width: 172
@@ -64,7 +65,7 @@ Rectangle {
             AppText {
                 id: statusLabel
                 anchors.centerIn: parent
-                text: root.subject ? root.subject.status : ""
+                text: root.statusText
                 color: Theme.text
                 font.pixelSize: 11
             }

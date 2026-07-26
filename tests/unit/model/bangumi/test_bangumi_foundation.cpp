@@ -13,13 +13,16 @@
 
 #include "model/bangumi/auth.hpp"
 #include "model/bangumi/bangumi.hpp"
+#include "model/bangumi/calendar.hpp"
 #include "model/bangumi/capability.hpp"
 #include "model/bangumi/collection.hpp"
 #include "model/bangumi/config.hpp"
+#include "model/bangumi/episode.hpp"
 #include "model/bangumi/http_request.hpp"
 #include "model/bangumi/network_proxy.hpp"
 #include "model/bangumi/protocol.hpp"
 #include "model/bangumi/search.hpp"
+#include "model/bangumi/subject.hpp"
 #include "model/bangumi/system_credential_provider_p.hpp"
 
 #include <array>
@@ -244,6 +247,124 @@ auto sampleSubjectSearchResponse() -> QByteArray {
       "tags": [{"name": "治愈", "count": 1200}]
     }]
   })json");
+}
+
+auto sampleSubjectDetailsResponse() -> QByteArray {
+  return QByteArrayLiteral(R"json({
+    "id": 400602,
+    "type": 2,
+    "name": "Sousou no Frieren",
+    "name_cn": "葬送的芙莉莲",
+    "summary": "冒险结束后的故事",
+    "series": false,
+    "nsfw": false,
+    "locked": false,
+    "date": "2023-09-29",
+    "platform": "TV",
+    "images": {
+      "large": "large", "common": "common", "medium": "medium",
+      "small": "small", "grid": "grid"
+    },
+    "infobox": [],
+    "volumes": 0,
+    "eps": 28,
+    "total_episodes": 28,
+    "rating": {
+      "rank": 10,
+      "total": 12000,
+      "count": {"10": 1000},
+      "score": 8.8
+    },
+    "collection": {
+      "wish": 100,
+      "collect": 200,
+      "doing": 300,
+      "on_hold": 10,
+      "dropped": 5
+    },
+    "meta_tags": ["TV", "日本动画"],
+    "tags": [{"name": "治愈", "count": 1200}]
+  })json");
+}
+
+auto sampleEpisodesResponse() -> QByteArray {
+  return QByteArrayLiteral(R"json({
+    "total": 2,
+    "limit": 200,
+    "offset": 0,
+    "data": [{
+      "id": 120001,
+      "type": 0,
+      "name": "The Journey's End",
+      "name_cn": "冒险的终点",
+      "sort": 1,
+      "ep": 1,
+      "airdate": "2023-09-29",
+      "comment": 100,
+      "duration": "00:24:00",
+      "desc": "第一集",
+      "disc": 0,
+      "duration_seconds": 1440
+    }, {
+      "id": 120002,
+      "type": 1,
+      "name": "Special",
+      "name_cn": "特别篇",
+      "sort": 1,
+      "airdate": "2023-10-01",
+      "comment": 20,
+      "duration": "00:05:00",
+      "desc": "",
+      "disc": 0
+    }]
+  })json");
+}
+
+auto sampleCalendarResponse() -> QByteArray {
+  return QByteArrayLiteral(R"json([
+    {
+      "weekday": {"en": "Mon", "cn": "星期一", "ja": "月曜日", "id": 1},
+      "items": [{
+        "id": 400602,
+        "url": "https://bgm.tv/subject/400602",
+        "type": 2,
+        "name": "Sousou no Frieren",
+        "name_cn": "葬送的芙莉莲",
+        "summary": "冒险结束后的故事",
+        "air_date": "2023-09-29",
+        "air_weekday": 1,
+        "rating": {
+          "total": 12000,
+          "count": {"10": 1000},
+          "score": 8.8
+        },
+        "rank": 10,
+        "images": {
+          "large": "large", "common": "common", "medium": "medium",
+          "small": "small", "grid": "grid"
+        },
+        "collection": {"doing": 300}
+      }]
+    },
+    {
+      "weekday": {"en": "Tue", "cn": "星期二", "ja": "火曜日", "id": 2},
+      "items": [{
+        "id": 8,
+        "url": "https://bgm.tv/subject/8",
+        "type": 2,
+        "name": "Example",
+        "name_cn": "示例",
+        "summary": "",
+        "air_date": "2026-07-21",
+        "air_weekday": 2
+      }]
+    },
+    {"weekday": {"en": "Wed", "cn": "星期三", "ja": "水曜日", "id": 3}, "items": []},
+    {"weekday": {"en": "Thu", "cn": "星期四", "ja": "木曜日", "id": 4}, "items": []},
+    {"weekday": {"en": "Fri", "cn": "星期五", "ja": "金曜日", "id": 5}, "items": []},
+    {"weekday": {"en": "Sat", "cn": "星期六", "ja": "土曜日", "id": 6}, "items": []},
+    {"weekday": {"en": "Sun", "cn": "星期日", "ja": "日曜日", "id": 7}, "items": []}
+  ])json");
 }
 
 } // namespace
@@ -626,6 +747,83 @@ TEST(BangumiCapabilities, UsesComposableFlagsAndDynamicFeatureGuide) {
             QUrl(QStringLiteral("https://bgm.tv/dev/app")));
 }
 
+TEST(BangumiCalendar, BuildsAnonymousPublicGetRequest) {
+  auto result =
+      anime_land::detail::buildBangumiCalendarRequest(BangumiSettings{});
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->url.path(), QStringLiteral("/calendar"));
+  EXPECT_TRUE(result->body.isEmpty());
+  EXPECT_FALSE(result->headers.bearerToken);
+  EXPECT_FALSE(result->headers.contentType);
+  EXPECT_TRUE(result->toQt()
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+}
+
+TEST(BangumiCalendar, ParsesSevenDayLegacyShape) {
+  auto result =
+      anime_land::detail::parseBangumiCalendarResponse(sampleCalendarResponse());
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(result->size(), 7U);
+  EXPECT_EQ(result->front().weekday.id, 1);
+  EXPECT_EQ(result->front().weekday.cn, QStringLiteral("星期一"));
+  ASSERT_EQ(result->front().items.size(), 1U);
+  const auto &subject = result->front().items.front();
+  EXPECT_EQ(subject.id, 400602);
+  EXPECT_EQ(subject.type, BangumiSubjectType::Anime);
+  EXPECT_EQ(subject.nameCn, QStringLiteral("葬送的芙莉莲"));
+  ASSERT_TRUE(subject.rating);
+  EXPECT_DOUBLE_EQ(subject.rating->score, 8.8);
+  ASSERT_TRUE(subject.images);
+  EXPECT_EQ(subject.images->grid, QStringLiteral("grid"));
+  ASSERT_TRUE(subject.collection);
+  EXPECT_EQ(subject.collection->doing, 300);
+  ASSERT_EQ((*result)[1].items.size(), 1U);
+  EXPECT_FALSE((*result)[1].items.front().rating);
+}
+
+TEST(BangumiCalendar, RejectsIncompleteOrDuplicateWeekdays) {
+  const QByteArray incomplete = QByteArrayLiteral(R"json([
+    {"weekday": {"en": "Mon", "cn": "星期一", "ja": "月曜日", "id": 1}, "items": []}
+  ])json");
+  QByteArray duplicate = sampleCalendarResponse();
+  duplicate.replace(
+      QByteArrayLiteral("\"en\": \"Tue\", \"cn\": \"星期二\", \"ja\": \"火曜日\", \"id\": 2"),
+      QByteArrayLiteral("\"en\": \"Mon\", \"cn\": \"星期一\", \"ja\": \"月曜日\", \"id\": 1"));
+
+  auto incompleteResult =
+      anime_land::detail::parseBangumiCalendarResponse(incomplete);
+  auto duplicateResult =
+      anime_land::detail::parseBangumiCalendarResponse(duplicate);
+
+  ASSERT_FALSE(incompleteResult);
+  EXPECT_EQ(incompleteResult.error().code, BangumiErrorCode::InvalidResponse);
+  ASSERT_FALSE(duplicateResult);
+  EXPECT_EQ(duplicateResult.error().code, BangumiErrorCode::InvalidResponse);
+}
+
+TEST(BangumiCalendar, ClientFetchesWithoutAuthorization) {
+  FakeNetworkAccessManager network;
+  network.responses.push_back(
+      {.status = 200, .body = sampleCalendarResponse()});
+  BangumiClient client(network, BangumiSettings{});
+
+  auto result = client.getCalendar().wait();
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(network.requests.size(), 1U);
+  EXPECT_EQ(network.operations.front(), QNetworkAccessManager::GetOperation);
+  EXPECT_EQ(network.requests.front().url().path(), QStringLiteral("/calendar"));
+  EXPECT_TRUE(network.requests.front()
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+  EXPECT_TRUE(network.requestBodies.front().isEmpty());
+  ASSERT_EQ(result->value.size(), 7U);
+  EXPECT_EQ(result->value.front().items.front().id, 400602);
+}
+
 TEST(BangumiCollections, BuildsFilteredPagedRequest) {
   BangumiCollectionQuery query{
       .subjectType = BangumiSubjectType::Anime,
@@ -910,6 +1108,148 @@ TEST(BangumiSearch, RejectsInvalidPaginationBeforeNetwork) {
 
   ASSERT_FALSE(result);
   EXPECT_EQ(result.error().code, BangumiErrorCode::InvalidConfiguration);
+}
+
+TEST(BangumiSubjectDetails, BuildsOptionalAuthenticatedPublicGetRequest) {
+  auto anonymous = anime_land::detail::buildBangumiSubjectDetailsRequest(
+      BangumiSettings{}, 400602);
+  auto authenticated = anime_land::detail::buildBangumiSubjectDetailsRequest(
+      BangumiSettings{}, 400602, QStringLiteral("session-token"));
+
+  ASSERT_TRUE(anonymous) << anonymous.error().message.toStdString();
+  ASSERT_TRUE(authenticated) << authenticated.error().message.toStdString();
+  EXPECT_EQ(anonymous->url.path(),
+            QStringLiteral("/v0/subjects/400602"));
+  EXPECT_TRUE(anonymous->body.isEmpty());
+  EXPECT_FALSE(anonymous->headers.contentType);
+  EXPECT_FALSE(anonymous->headers.bearerToken);
+  ASSERT_TRUE(authenticated->headers.bearerToken);
+  EXPECT_EQ(*authenticated->headers.bearerToken,
+            QStringLiteral("session-token"));
+}
+
+TEST(BangumiSubjectDetails, ParsesOfficialSubjectShape) {
+  auto result = anime_land::detail::parseBangumiSubjectDetailsResponse(
+      sampleSubjectDetailsResponse());
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->id, 400602);
+  EXPECT_EQ(result->type, BangumiSubjectType::Anime);
+  EXPECT_EQ(result->nameCn, QStringLiteral("葬送的芙莉莲"));
+  EXPECT_EQ(result->totalEpisodes, 28);
+  EXPECT_DOUBLE_EQ(result->rating.score, 8.8);
+  ASSERT_EQ(result->tags.size(), 1U);
+  EXPECT_EQ(result->tags.front().name, QStringLiteral("治愈"));
+}
+
+TEST(BangumiSubjectDetails, RejectsInvalidIdentityAndDate) {
+  auto invalidRequest = anime_land::detail::buildBangumiSubjectDetailsRequest(
+      BangumiSettings{}, 0);
+  QByteArray invalidResponse = sampleSubjectDetailsResponse();
+  invalidResponse.replace(QByteArrayLiteral("2023-09-29"),
+                          QByteArrayLiteral("not-a-date"));
+  auto parsed = anime_land::detail::parseBangumiSubjectDetailsResponse(
+      invalidResponse);
+
+  ASSERT_FALSE(invalidRequest);
+  EXPECT_EQ(invalidRequest.error().code,
+            BangumiErrorCode::InvalidConfiguration);
+  ASSERT_FALSE(parsed);
+  EXPECT_EQ(parsed.error().code, BangumiErrorCode::InvalidResponse);
+}
+
+TEST(BangumiSubjectDetails, ClientRetriesRejectedTokenAnonymously) {
+  FakeNetworkAccessManager network;
+  network.responses.push_back(
+      {.status = 401,
+       .body = QByteArrayLiteral(R"json({"title":"Unauthorized"})json"),
+       .error = QNetworkReply::AuthenticationRequiredError});
+  network.responses.push_back(
+      {.status = 200, .body = sampleSubjectDetailsResponse()});
+  BangumiClient client(network, BangumiSettings{});
+
+  auto result = client.getSubject(
+      400602, QStringLiteral("stale-token")).wait();
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(network.requests.size(), 2U);
+  EXPECT_EQ(network.operations.front(), QNetworkAccessManager::GetOperation);
+  EXPECT_EQ(network.requests.front().url().path(),
+            QStringLiteral("/v0/subjects/400602"));
+  EXPECT_EQ(network.requests.front().rawHeader(
+                QByteArrayLiteral("Authorization")),
+            QByteArrayLiteral("Bearer stale-token"));
+  EXPECT_TRUE(network.requests.back().rawHeader(
+                  QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+  EXPECT_EQ(result->value.id, 400602);
+}
+
+TEST(BangumiEpisodes, BuildsPublicPagedGetRequest) {
+  auto result = anime_land::detail::buildBangumiEpisodesRequest(
+      BangumiSettings{}, 400602, 200, 40);
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->url.path(), QStringLiteral("/v0/episodes"));
+  const QUrlQuery query(result->url);
+  EXPECT_EQ(query.queryItemValue(QStringLiteral("subject_id")),
+            QStringLiteral("400602"));
+  EXPECT_EQ(query.queryItemValue(QStringLiteral("limit")),
+            QStringLiteral("200"));
+  EXPECT_EQ(query.queryItemValue(QStringLiteral("offset")),
+            QStringLiteral("40"));
+  EXPECT_TRUE(result->body.isEmpty());
+  EXPECT_FALSE(result->headers.bearerToken);
+}
+
+TEST(BangumiEpisodes, ParsesOfficialPagedEpisodeShape) {
+  auto result = anime_land::detail::parseBangumiEpisodesResponse(
+      sampleEpisodesResponse());
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  EXPECT_EQ(result->total, 2);
+  ASSERT_EQ(result->data.size(), 2U);
+  EXPECT_EQ(result->data.front().id, 120001);
+  EXPECT_EQ(result->data.front().nameCn, QStringLiteral("冒险的终点"));
+  ASSERT_TRUE(result->data.front().episodeNumber);
+  EXPECT_DOUBLE_EQ(*result->data.front().episodeNumber, 1.0);
+  ASSERT_TRUE(result->data.front().durationSeconds);
+  EXPECT_EQ(*result->data.front().durationSeconds, 1440);
+  EXPECT_EQ(result->data.back().type, 1);
+  EXPECT_FALSE(result->data.back().durationSeconds);
+}
+
+TEST(BangumiEpisodes, ClientFetchesEpisodesWithoutAuthorization) {
+  FakeNetworkAccessManager network;
+  network.responses.push_back(
+      {.status = 200, .body = sampleEpisodesResponse()});
+  BangumiClient client(network, BangumiSettings{});
+
+  auto result = client.getEpisodes(400602).wait();
+
+  ASSERT_TRUE(result) << result.error().message.toStdString();
+  ASSERT_EQ(network.requests.size(), 1U);
+  EXPECT_EQ(network.operations.front(), QNetworkAccessManager::GetOperation);
+  EXPECT_EQ(network.requests.front().url().path(),
+            QStringLiteral("/v0/episodes"));
+  EXPECT_TRUE(network.requests.front()
+                  .rawHeader(QByteArrayLiteral("Authorization"))
+                  .isEmpty());
+  ASSERT_EQ(result->value.data.size(), 2U);
+}
+
+TEST(BangumiEpisodes, RejectsInvalidSubjectOrPaginationBeforeNetwork) {
+  auto invalidSubject = anime_land::detail::buildBangumiEpisodesRequest(
+      BangumiSettings{}, 0);
+  auto invalidLimit = anime_land::detail::buildBangumiEpisodesRequest(
+      BangumiSettings{}, 400602, 201);
+
+  ASSERT_FALSE(invalidSubject);
+  EXPECT_EQ(invalidSubject.error().code,
+            BangumiErrorCode::InvalidConfiguration);
+  ASSERT_FALSE(invalidLimit);
+  EXPECT_EQ(invalidLimit.error().code,
+            BangumiErrorCode::InvalidConfiguration);
 }
 
 TEST(BangumiHttpRequest, MaterializesTypedHeadersAndFormBody) {
