@@ -42,7 +42,7 @@
   - QRhi 视频渲染
   - 字幕与弹幕渲染基础
 - **开发者 B：应用与数据负责人**
-  - Qt 应用壳
+  - Qt Quick/QML 应用壳
   - Bangumi
   - SQLite
   - 媒体库
@@ -109,50 +109,39 @@ v0.1 应形成以下完整闭环：
 - 网络源插件
 - 下载任务
 - macOS 支持
-- QML 或 Qt Quick 前端评估
+- Qt Quick/QML 前端组件化和性能优化
 
 ---
 
 ## 4. 总体架构
 
+模块归属、依赖方向、Qt Quick/QML 前端决策以及当前目录到目标目录的迁移关系，以
+[`arch.md`](arch.md) 为实施契约。本节只保留产品计划需要的分层摘要。
+
 ```text
-┌───────────────────────────────────────────────┐
-│                Qt Presentation                │
-│ 窗口、页面、控件、快捷键、设置、系统集成       │
-└──────────────────────┬────────────────────────┘
-                       │ Signal / Property / DTO
-┌──────────────────────▼────────────────────────┐
-│               Application Layer               │
-│ PlaybackSession / LibraryService              │
-│ BangumiService / ProgressService / SyncService│
-└──────────────────────┬────────────────────────┘
-                       │ Ilias Task / Channel
-┌──────────────────────▼────────────────────────┐
-│                Infrastructure                 │
-│ Bangumi Client / SQLite / HTTP / File / Cache │
-│ Credential Store / MediaSource Factory        │
-└──────────────────────┬────────────────────────┘
-                       │
-┌──────────────────────▼────────────────────────┐
-│                     nekoav                    │
-│ Pipeline / Element / Pad / Event / Message    │
-│ FFmpeg / Audio / Subtitle / Clock / Decoder   │
-└──────────────────────┬────────────────────────┘
-                       │ VideoRenderer
-┌──────────────────────▼────────────────────────┐
-│                 QRhi Renderer                 │
-│ CPU RGBA → YUV Shader → Hardware Frame Import │
-└───────────────────────────────────────────────┘
+View（QML / CLI）
+        ↓ Signal / Property / DTO
+Presentation（Presenter / ViewModel）
+        ↓ 用例调用
+Model（Bangumi / Playback / Library）
+        ↓ Ilias Task / Channel
+Persistence / Media / Platform Adapters
+        ↓
+nekoav / FFmpeg / QRhi
+
+Runtime 负责创建、连接和关闭各层；Common 只提供基础能力。
 ```
 
 ### 4.1 核心边界
 
 - Qt 不负责解码、同步或媒体网络读取。
 - Bangumi 模块不直接依赖 nekoav。
+- View 只访问 Presentation，不直接调用 Model、网络、数据库或 TokenStore。
+- `PlaybackSession` 属于 Model；Presentation 只映射播放命令和 Snapshot。
 - UI 不直接持有 `nekoav::Element`、`Pad` 或 `Pipeline`。
 - 只有 `PlaybackSession` 可以直接管理当前播放 Pipeline。
 - 所有播放命令必须经过串行命令通道。
-- SQLite 访问必须通过统一 Repository 或数据库 Actor。
+- 数据库访问必须通过类型化 Store，并在统一数据库执行域串行化写入。
 - 自定义网络源通过 `AsyncMediaSource` 接入，不把业务网络逻辑写进 FFmpeg Element。
 - QRhi Renderer 只消费标准化 `VideoFrame`，不感知 Bangumi 或媒体库。
 
@@ -167,33 +156,41 @@ v0.1 应形成以下完整闭环：
 ```text
 Ilias                 独立基础设施仓库
 nekoav                独立媒体框架仓库
-video-app             应用仓库
+anime-land            应用仓库
 ```
 
 应用通过固定 commit、tag 或包版本依赖 Ilias 和 nekoav。开发期可以使用本地 override。
 
 ### 5.2 应用仓库目录
 
+详细职责和迁移关系见 [`arch.md`](arch.md)。目标目录摘要如下：
+
 ```text
-video-app/
+anime-land/
 ├─ xmake.lua
 ├─ README.md
 ├─ docs/
-│  ├─ project-plan.md
-│  ├─ architecture.md
+│  ├─ plan.md
+│  ├─ arch.md
 │  ├─ testing.md
 │  └─ adr/
 ├─ src/
 │  ├─ main.cpp
 │  ├─ runtime/
+│  ├─ view/
 │  ├─ presentation/
-│  ├─ playback/
-│  ├─ bangumi/
-│  ├─ library/
-│  ├─ persistence/
-│  ├─ mediaio/
-│  ├─ subtitle/
-│  ├─ danmaku/
+│  ├─ model/
+│  │  ├─ bangumi/
+│  │  ├─ playback/
+│  │  ├─ library/
+│  │  └─ persistence/
+│  ├─ media/
+│  │  ├─ nekoav/
+│  │  ├─ mediaio/
+│  │  ├─ render/
+│  │  ├─ subtitle/
+│  │  └─ danmaku/
+│  ├─ common/
 │  └─ platform/
 ├─ resources/
 │  ├─ shaders/
@@ -203,6 +200,7 @@ video-app/
 │  ├─ unit/
 │  ├─ integration/
 │  ├─ media/
+│  ├─ view/qml/
 │  └─ fixtures/
 └─ packaging/
    ├─ windows/
@@ -221,7 +219,7 @@ video-app/
 - 创建并安装 `ilias::QIoContext`
 - 初始化日志
 - 初始化线程池与全局资源
-- 运行数据库迁移
+- 打开数据库和各个 Store；仅在存在真实跨版本转换时运行显式迁移
 - 构建服务依赖
 - 管理应用关闭顺序
 
@@ -360,18 +358,19 @@ using MessageStorage = std::variant<
 FFmpeg VideoFrame
     → RGBA Frame
     → latest-frame mailbox
-    → Qt queued invoke
+    → render-thread scheduling
+    → Qt Quick VideoOutputItem
     → QRhi texture upload
-    → draw
+    → scene graph draw
 ```
 
 ### 必须明确的行为
 
 - Renderer mailbox 容量为 1。
 - 新帧覆盖尚未显示的旧帧。
-- UI 线程只取最新帧。
+- 渲染线程只取最新帧。
 - Renderer shutdown 后禁止继续提交。
-- Widget 销毁时断开 Proxy。
+- VideoOutputItem 销毁或 Scene Graph invalidated 时断开 Proxy。
 - RHI 设备变化时重建全部 GPU 资源。
 - RenderPassDescriptor 变化时重建 Pipeline。
 - 支持 KeepAspectRatio。
@@ -443,10 +442,10 @@ Seek 必须：
 
 ## 6.6 Bangumi 模块
 
-### 接口
+### Model 门面
 
 ```cpp
-class BangumiRepository {
+class BangumiModule {
 public:
     auto searchSubjects(QString query)
         -> Task<Result<std::vector<Subject>>>;
@@ -457,7 +456,7 @@ public:
     auto getEpisodes(std::int64_t subjectId)
         -> Task<Result<std::vector<Episode>>>;
 
-    auto getCollections()
+    auto getCurrentUserCollections()
         -> Task<Result<std::vector<UserCollection>>>;
 
     auto updateEpisodeProgress(
@@ -502,8 +501,10 @@ struct PlaybackProgress {
 };
 ```
 
-本地 ID、外部身份、媒体资源根和可播放项的完整边界以
-[`database/local_database_design.md`](database/local_database_design.md) 为准。
+本地条目、章节 ID 和外部身份的当前边界以
+[`database/local_database_design.md`](database/local_database_design.md) 为准。媒体资源根、
+可播放项、章节关联和播放进度仍是计划模型；实现前必须在独立的 Library 持久化专题中
+确定关系、事务和生命周期。
 UI 和播放层不得直接把 Bangumi ID、文件路径或 provider 私有 descriptor 当作核心
 对象身份。
 
@@ -537,13 +538,14 @@ public:
 
 ---
 
-## 6.8 SQLite 与持久化
+## 6.8 关系数据库与持久化
 
 ### 表结构
 
-v0.1 的表结构、Migration、Store API 和事务边界以
-[`database/local_database_design.md`](database/local_database_design.md) 为实施契约。
-本节不再维护一份容易漂移的表名副本。
+当前 CatalogStore 的表结构、Form 生命周期、Store API 和事务边界以
+[`database/local_database_design.md`](database/local_database_design.md) 为实施契约。本节
+不再维护一份容易漂移的表名副本。Library 所需的媒体资源、章节关联和播放进度关系
+尚未纳入当前六个目录关系，不能把计划中的 C++ 结构当成已经冻结的数据库 Schema。
 
 `bangumi_cache`、`sync_queue`、账号同步和图片二进制缓存不属于 v0.1 核心数据库；
 已经浏览过的条目通过标准化 `subjects`、`tags` 和 `episodes` 数据离线可读。
@@ -554,11 +556,12 @@ v0.1 的表结构、Migration、Store API 和事务边界以
 - 播放位置不按每个 ClockUpdate 写入。
 - 每 10 至 15 秒保存一次。
 - Pause、Stop、切集和退出时立即保存。
-- Schema 变更必须添加 migration。
+- 当前没有真实跨版本转换，不维护空的 migration 仪式。
+- 将来发生不兼容 Schema 变更时，必须提供明确、可恢复的 migration。
 - 测试使用临时数据库。
-- Repository 不向 UI 暴露 SQL。
-- SQLite 外键必须在开始 Migration 事务前启用并验证。
-- 使用 ilias-sql 执行 Migration 时，每条 DDL 独立提交给驱动；不得假设一次
+- Store 不向 UI 暴露 SQL。
+- SQLite/SQLCipher 通过连接 option 显式启用并验证外键。
+- 未来使用 ilias-sql 执行 Migration 时，每条 DDL 独立提交给驱动；不得假设一次
   `execute()` 会消费多条 SQL。
 
 ---
@@ -600,9 +603,9 @@ v0.1 不要求完整实现，只要求在架构上保留 Overlay Renderer 接口
 主要目录：
 
 ```text
-src/playback/
-src/mediaio/
-src/render/
+src/model/playback/
+src/media/mediaio/
+src/media/render/
 nekoav 仓库
 ```
 
@@ -624,19 +627,21 @@ nekoav 仓库
 主要目录：
 
 ```text
+src/view/
 src/presentation/
-src/bangumi/
-src/library/
-src/persistence/
+src/model/bangumi/
+src/model/library/
+src/model/persistence/
+src/runtime/
 src/platform/
 ```
 
 主要任务：
 
-- 应用窗口和导航
+- Qt Quick 应用窗口和导航
 - Bangumi Client
 - 领域模型
-- SQLite Schema 和 Repository
+- CatalogStore Schema、Form 和类型化 Store
 - 媒体库页面
 - 条目详情和章节列表
 - 文件关联 UI
@@ -648,11 +653,11 @@ src/platform/
 以下文件或接口需共同维护：
 
 ```text
-src/playback/playback_command.hpp
-src/playback/playback_snapshot.hpp
-src/library/media_resource.hpp
+src/model/playback/playback_command.hpp
+src/model/playback/playback_snapshot.hpp
+src/model/library/media_resource.hpp
 src/runtime/service_registry.hpp
-docs/architecture.md
+docs/arch.md
 docs/adr/
 ```
 
@@ -691,9 +696,9 @@ docs/adr/
 
 ### [并行-B]
 
-- 创建 Qt 应用壳。
-- 创建页面导航和空页面。
-- 建立 SQLite migration 框架。
+- 创建 Qt Quick/QML 应用壳。
+- 创建 QML 页面导航和空页面。
+- 建立 CatalogStore Form 创建、复用和关闭框架。
 - 定义 Subject、Episode、MediaResource 等领域对象。
 
 ### [集成点]
@@ -721,7 +726,7 @@ docs/adr/
 - 实现 Open、Play、Pause、Stop、Seek。
 - 实现 Pipeline Message 消费。
 - 实现 Renderer 初始化和 shutdown。
-- 完成 RGBA QRhiWidget。
+- 完成 RGBA VideoOutputItem 与 Qt Quick/QRhi Renderer。
 - 增加连续 Open/Stop/Seek 测试。
 - 补全必要的 nekoav Error 和 State 消息。
 
@@ -731,7 +736,7 @@ docs/adr/
 - 实现控制栏、进度条、音量和全屏。
 - 实现文件选择器。
 - 实现最近播放页面原型。
-- 实现播放进度 Repository。
+- 实现 PlaybackProgressStore。
 - 实现应用设置基础。
 
 ### [串行依赖]
@@ -911,7 +916,7 @@ docs/adr/
 
 ### [共同评审]
 
-- 是否将 UI 迁移至 QML。
+- Qt Quick 场景图与 QRhi 接入 API 的升级策略。
 - 是否启用硬件帧零拷贝。
 - 是否增加插件 ABI。
 - 是否支持移动端。
@@ -926,11 +931,11 @@ docs/adr/
 | P-002 | PlaybackSnapshot 定义 | [共同评审] | A+B | 无 |
 | P-003 | PlaybackSession commandLoop | [并行-A] | A | P-001 |
 | P-004 | Pipeline Message Adapter | [并行-A] | A | P-002 |
-| P-005 | Qt 应用壳 | [并行-B] | B | 无 |
+| P-005 | Qt Quick/QML 应用壳 | [并行-B] | B | 无 |
 | P-006 | 播放器控制页 | [并行-B] | B | P-001/P-002 |
 | P-007 | QRhi RGBA Renderer | [并行-A] | A | 无 |
-| P-008 | SQLite Migration | [并行-B] | B | 无 |
-| P-009 | PlaybackProgress Repository | [并行-B] | B | P-008 |
+| P-008 | CatalogStore Schema/Form | [并行-B] | B | 无 |
+| P-009 | PlaybackProgressStore | [并行-B] | B | P-008 |
 | P-010 | nekoav Stop/Teardown 压测 | [并行-A] | A | P-003 |
 | B-001 | Bangumi Client | [并行-B] | B | 无 |
 | B-002 | Bangumi Cache | [并行-B] | B | B-001/P-008 |
@@ -971,7 +976,7 @@ docs/adr/
 - PlaybackSession 对 UI 的公共接口
 - Pipeline Message Adapter
 - Renderer 生命周期接口
-- 播放进度 Repository 接口
+- PlaybackProgressStore 接口
 
 ### Freeze 3：阶段 2 完成
 
@@ -1044,7 +1049,7 @@ docs(adr): define playback session ownership
 - 文件名 Matcher
 - Bangumi DTO 映射
 - 播放完成判定
-- 数据库 Repository
+- 类型化 Store
 - 缓存淘汰
 - Range 计算
 
@@ -1054,7 +1059,7 @@ docs(adr): define playback session ownership
 - Seek + Flush
 - EOS
 - Renderer shutdown
-- SQLite migration
+- CatalogStore `create_if_not_exists()`、重复打开和事务回滚
 - Bangumi 缓存回退
 - HTTP Range
 - 取消中的网络请求
@@ -1140,7 +1145,7 @@ v0.1 必须满足：
 | Seek、Stop、Open 并发竞态 | 高 | 单 commandLoop；generation；统一关闭路径 |
 | QRhi 私有 API 兼容性 | 高 | 固定 Qt 版本；封装 Renderer Core；避免扩散私有头文件 |
 | 网络 AVIO 桥接死锁 | 高 | 同步 callback 只读有界缓存；不在 callback 内等待 executor |
-| SQLite 阻塞 Qt 主线程 | 中 | 数据库 Actor 或专用执行线程 |
+| 关系数据库操作阻塞 Qt 主线程 | 中 | 统一数据库执行域或专用执行线程 |
 | Bangumi API 变化或限流 | 中 | DTO 隔离；缓存；退避；合法 User-Agent |
 | 跨平台硬件解码差异 | 中 | v0.1 使用软件或可回退路径；硬件解码后置 |
 | 双人修改共享 DTO 冲突 | 中 | 共享接口评审；小 PR；接口冻结 |
@@ -1156,7 +1161,7 @@ v0.1 必须满足：
 - [ ] 定义 PlaybackCommand
 - [ ] 定义 PlaybackSnapshot
 - [ ] 实现 AppRuntime
-- [ ] 建立 SQLite migration
+- [ ] 建立 CatalogStore Schema/Form
 - [ ] 建立 Windows/Linux CI
 - [ ] 创建 FakePlaybackSession
 
@@ -1199,9 +1204,9 @@ v0.1 必须满足：
 
 ### 开发者 B
 
-1. Qt 应用壳和页面导航。
+1. Qt Quick/QML 应用壳和页面导航。
 2. 领域模型。
-3. SQLite migration 和 Repository。
+3. CatalogStore Schema/Form 和类型化 Store。
 4. Bangumi Client。
 5. FakePlaybackSession 驱动播放器 UI。
 6. 条目搜索和详情原型。
@@ -1223,11 +1228,12 @@ v0.1 必须满足：
 ADR-001：使用 Ilias 作为应用统一异步运行时
 ADR-002：使用 PlaybackSession 隔离 UI 与 nekoav
 ADR-003：播放命令采用单有界 Channel 串行执行
-ADR-004：v0.1 使用 QRhiWidget 和 RGBA 上传
-ADR-005：SQLite 访问采用单写入执行域
+ADR-004：v0.1 使用 Qt Quick VideoOutputItem、QRhi Renderer 和 RGBA 上传
+ADR-005：关系数据库访问采用单写入执行域
 ADR-006：自定义媒体 I/O 使用 AsyncMediaSource + AVIO Bridge
 ADR-007：v0.1 目标平台为 Windows 和 Linux
 ADR-008：Bangumi DTO 与领域模型分离
+ADR-009：主图形前端使用 Qt Quick/QML
 ```
 
 ---

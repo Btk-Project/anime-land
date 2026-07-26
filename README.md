@@ -14,6 +14,10 @@
 - Bangumi HTTP 与凭据文件协议使用 neko-proto-tools 的 RapidJSON 后端。
 - Qt JSON adapter 暂时保留，用于兼容性测试和后端对照，不参与 Bangumi 业务链路。
 
-## 开发规范
+## 项目文档
 
+- [应用架构](docs/arch.md)
+- [开发计划](docs/plan.md)
+- [Bangumi 模块](docs/bangumi/README.md)
+- [本地数据库设计](docs/database/local_database_design.md)
 - [C++ 代码规范](docs/coding-style.md)

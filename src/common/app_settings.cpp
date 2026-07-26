@@ -1,5 +1,7 @@
-#include "./app_settings.hpp"
-#include "./log.hpp"
+#include "pch.hpp"
+
+#include "common/app_settings.hpp"
+#include "common/log.hpp"
 
 #include <nekoproto/serialization/toml_serializer.hpp>
 

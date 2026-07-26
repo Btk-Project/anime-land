@@ -31,16 +31,19 @@ local function default_test_config(file)
 
     if group == "common" then
         config.run_timeout = 5000
-        config.deps = {"common"}
+        config.deps = {"model"}
         config.qt_frameworks = {"QtCore"}
     elseif group == "bangumi" then
-        config.deps = {"bangumi"}
+        config.deps = {"model"}
         config.qt_frameworks = {"QtCore", "QtNetwork"}
     elseif group == "presentation" then
         config.deps = {"presentation"}
+    elseif group == "cli" then
+        config.group = "view"
+        config.deps = {"view"}
     elseif group == "persistence" then
         config.run_timeout = 10000
-        config.deps = {"persistence"}
+        config.deps = {"model"}
         config.qt_frameworks = {"QtCore"}
     -- else
         -- append_values(config.files, "../src/proto_base.cpp", "../src/jsonrpc.cpp")
@@ -70,6 +73,7 @@ local function define_test_target(file, config)
         set_kind("binary")
         set_default(false)
         add_includedirs("$(projectdir)/src")
+        add_includedirs("$(projectdir)/tests/unit")
         for _, define in ipairs(config.defines) do
             add_defines(define)
         end

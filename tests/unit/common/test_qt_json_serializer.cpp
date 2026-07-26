@@ -192,4 +192,4 @@ TEST(QtJsonSerializer, RejectsUnsignedIntegerAboveQint64) {
   EXPECT_NE(serializer.error()->msg.find("INT64_MAX"), std::string::npos);
 }
 
-#include "common_main.hpp.in"
+#include "common/common_main.hpp.in"

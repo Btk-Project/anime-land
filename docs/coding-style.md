@@ -26,6 +26,16 @@ return ilias::Err(bangumiError(BangumiErrorCode::InvalidConfiguration, msg));
 - 审查转发时必须考虑生命周期。被转发任务若按引用使用本层参数、捕获对象或本层构造的临时值，直接返回可能使这些值过早销毁；这种情况保留协程，或先把所有权明确移入返回任务。
 - 不要为了表面统一给所有异步接口增加协程帧；接口返回相同的任务类型已经足够统一。
 
+## 预编译头
+
+- PCH 按编译 target 启用，不把同一个 `src/pch.hpp` 机械地配置到所有 target；当前仅
+  聚合后的 `model` target 使用 `set_pcxxheader("$(projectdir)/src/pch.hpp")`。
+- 启用 PCH 的 target 中，每个 `.cpp` 的第一个 include 必须是 `#include "pch.hpp"`，随后
+  才包含本模块头文件；未启用 PCH 的 target 不得把它当作普通伞头包含。
+- PCH 只放该 target 内稳定共享的标准库、QtCore、Ilias 和序列化基础头；不得加入项目
+  业务头、平台私有头或仅单一源文件使用的 QtNetwork、ilias-sql 等依赖。
+- 头文件不能依赖 PCH 提供声明，必须保持自包含。
+
 ## 命名和上下文
 
 - 名字应当是当前上下文中最短且无歧义的表达，不是把实现说明写成一句函数名。能写 `md5` 时，不写 `functionGeneratesTheCustomLowerCaseMd5Encoding`。

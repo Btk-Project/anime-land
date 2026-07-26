@@ -308,4 +308,4 @@ TEST(AppSettings, EmptySerializedQUrlRepresentsAnUnsetUrl) {
   EXPECT_TRUE(value.url.isEmpty());
 }
 
-#include "common_main.hpp.in"
+#include "common/common_main.hpp.in"

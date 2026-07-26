@@ -117,7 +117,7 @@ add_requireconfs("**ilias-sql", {
     override = true, -- 强制覆盖
     configs = {shared = true,
                stdcxx = tonumber(get_config("stdcxx")),
-               enable_sqlite = "sqlcipher",
+               enable_sqlite = "sqlite",
                enable_mysql = true,
                enable_orm_interface = true}
 })
@@ -135,17 +135,16 @@ add_requireconfs("**spdlog", {
 })
 
 includes("./tests")
-includes("./src/bangumi")
-includes("./src/common")
-includes("./src/persistence")
+includes("./src/model")
 includes("./src/presentation")
+includes("./src/view")
 
 -- MARK: targets
 target("main")
     add_rules("qt.console")
-    add_includedirs("./src")
+    add_includedirs("$(projectdir)/src")
     add_packages("libsodium", "neko-proto-tools", "ilias-sql", "ilias")
-    add_deps("presentation", "bangumi", "common", "persistence")
+    add_deps("view", "presentation", "model")
     add_frameworks("QtCore", "QtGui", "QtNetwork")
     add_files("src/*.cpp")
     add_options("enable_spdlog")

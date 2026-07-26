@@ -10,13 +10,14 @@
 
 #include <nekoproto/argparser/argparser.hpp>
 
-#include "bangumi/bangumi.hpp"
+#include "model/bangumi/bangumi.hpp"
 #include "common/app_settings.hpp"
 #include "common/config.h"
 #include "common/log.hpp"
-#include "presentation/bangumi_presenter.hpp"
-#include "presentation/cli/bangumi_cli_options.hpp"
-#include "presentation/cli/bangumi_cli_view.hpp"
+#include "presentation/bangumi/bangumi_presenter.hpp"
+#include "view/cli/bangumi_cli_command.hpp"
+#include "view/cli/bangumi_cli_options.hpp"
+#include "view/cli/bangumi_cli_view.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -145,12 +146,11 @@ auto tokenStoreName(TokenStoreKind kind) -> std::string_view {
     return "unknown";
 }
 
-auto runCommand(BangumiPresenter &presenter, const cli::Command &command,
-                QCoreApplication &application) -> ilias::FireAndForget {
-    auto task = std::visit(
-        [&presenter](const auto &value) { return presenter.run(value); },
-        command);
-    const int exitCode = co_await std::move(task);
+auto runCommand(BangumiPresenter &presenter, BangumiView &view,
+                const cli::Command &command, QCoreApplication &application)
+    -> ilias::FireAndForget {
+    const int exitCode =
+        co_await cli::runBangumiCliCommand(presenter, view, command);
     AL_LOG_INFO("[app] command completed exit_code={}", exitCode);
     application.exit(exitCode);
 }
@@ -333,7 +333,9 @@ auto main(int argc, char **argv) -> int {
     // configuration failure could call exit() before Qt can observe it.
     AL_LOG_DEBUG("[app] entering Qt event loop");
     QTimer::singleShot(0, application.get(),
-                       [&]() { runCommand(presenter, command, *application); });
+                       [&]() {
+                           runCommand(presenter, view, command, *application);
+                       });
     const int exitCode = application->exec();
     AL_LOG_INFO("[app] stopped exit_code={}", exitCode);
     return exitCode;

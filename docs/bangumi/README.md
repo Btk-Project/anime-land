@@ -2,7 +2,7 @@
 
 > 文档状态：Living Design  
 > 当前阶段：浏览器登录闭环 + 公开条目搜索 + Collection Read 能力参考切片
-> 前端架构：MVP（Model-View-Presenter）
+> 前端架构：View–Presentation–Model；CLI 当前使用 MVP Presenter，目标图形 View 使用 Qt Quick/QML ViewModel
 
 本文件只负责导航、当前状态和跨专题约束。协议细节、接口字段和测试清单放在专题文档中，避免每次修改都加载一份不断膨胀的总设计。
 
@@ -14,6 +14,7 @@
 | 功能声明、八项权限、动态指导、权限不足交互 | [capabilities.md](capabilities.md) | `BangumiCapability`、`BangumiModuleOptions` 与 remediation 契约 |
 | 搜索条目 | [search.md](search.md) | 公开 POST 搜索、可选账号上下文、筛选、分页与 DTO |
 | 获取用户收藏 | [collections.md](collections.md) | 官方端点、分页、DTO、解析、权限语义与首个接口 |
+| 应用架构和目录边界 | [../arch.md](../arch.md) | View、Presentation、Model、Runtime 与迁移关系 |
 | 项目整体路线 | [../plan.md](../plan.md) | 播放器、数据层、同步和应用级规划 |
 
 ## 当前实现快照
@@ -38,7 +39,7 @@
 
 ## 跨专题约束
 
-1. 严格采用 MVP。View 不直接调用 Auth、Client 或 TokenStore；业务入口通过 Presenter 和 `BangumiModule`。
+1. View 不直接调用 Auth、Client 或 TokenStore；CLI 通过 Presenter，QML 通过 Presenter/ViewModel，业务入口统一进入 `BangumiModule`。
 2. Model 不读取 argv、不打印 stdout，也不把 OAuth JSON 暴露给上层。
 3. Qt 对象留在创建线程；异步流程使用 Ilias Task 和 Qt Awaiter，不在事件循环中 `.wait()`。
 4. Token 只进入 TokenStore，不进入普通设置或业务数据库；Client Secret 在设置文件中加密存储。
@@ -71,14 +72,17 @@ flowchart LR
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/bangumi/auth.*` | OAuth、预检、回调和 Token 交换 |
-| `src/bangumi/capability.*` | 权限枚举元数据、功能声明、动态指导和修复错误 |
-| `src/bangumi/search.*` | 公开条目搜索请求、响应 DTO、编码与校验 |
-| `src/bangumi/collection.*` | 收藏查询值对象、DTO、URL 和 JSON 映射 |
-| `src/bangumi/client.*` | `/v0/me`、公开搜索与收藏 HTTP 请求 |
-| `src/bangumi/bangumi.hpp`, `module.cpp` | Model 门面、状态和事务编排 |
-| `src/bangumi/config.*` | Token、错误模型和 TokenStore |
-| `src/presentation/*` | Presenter 和 CLI View |
+| `src/model/bangumi/auth.*` | OAuth、预检、回调和 Token 交换 |
+| `src/model/bangumi/capability.*` | 权限枚举元数据、功能声明、动态指导和修复错误 |
+| `src/model/bangumi/search.*` | 公开条目搜索请求、响应 DTO、编码与校验 |
+| `src/model/bangumi/collection.*` | 收藏查询值对象、DTO、URL 和 JSON 映射 |
+| `src/model/bangumi/client.*` | `/v0/me`、公开搜索与收藏 HTTP 请求 |
+| `src/model/bangumi/bangumi.*` | Model 门面、状态和事务编排 |
+| `src/model/bangumi/config.*` | Token、错误模型和 TokenStore |
+| `src/presentation/bangumi/*` | 与具体前端无关的 Presenter 和 View 契约 |
+| `src/view/cli/*` | CLI 参数、命令分派、退出码和具体 View |
+
+Qt Quick/QML View 尚未实现；后续边界和迁移状态见[应用架构](../arch.md)。
 
 ## 外部依据
 

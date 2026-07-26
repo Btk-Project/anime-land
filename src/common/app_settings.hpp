@@ -14,8 +14,8 @@
 #include <nekoproto/global/reflect.hpp>
 #include <nekoproto/serialization/reflection.hpp>
 
-#include "./log.hpp"
-#include "./qt_serialization.hpp"
+#include "common/log.hpp"
+#include "common/qt_serialization.hpp"
 
 namespace anime_land {
 using namespace ilias;

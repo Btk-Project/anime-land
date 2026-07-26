@@ -1,6 +1,6 @@
 #pragma once
 
-#include "./config.h"
+#include "common/config.h"
 
 #ifdef ANIME_LAND_USE_SPDLOG
 #include <spdlog/spdlog.h>
