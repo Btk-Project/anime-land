@@ -485,10 +485,28 @@ public:
 
 ```cpp
 struct MediaResource {
-    SourceResourceId id;
+    MediaResourceId id;
     QString providerKey;
     QString stableKey;
     int descriptorVersion;
+    QByteArray descriptor;
+    QString displayName;
+};
+
+struct SourceItem {
+    SourceItemId id;
+    MediaResourceId resourceId;
+    QString stableKey;
+    QByteArray descriptor;
+    QString displayName;
+    std::optional<std::chrono::milliseconds> duration;
+};
+
+struct EpisodeMediaLink {
+    EpisodeId episodeId;
+    SourceItemId sourceItemId;
+    MediaLinkKind kind;
+    QDateTime updatedAt;
 };
 
 struct PlaybackProgress {
@@ -503,8 +521,8 @@ struct PlaybackProgress {
 
 本地条目、章节 ID 和外部身份的当前边界以
 [`database/local_database_design.md`](database/local_database_design.md) 为准。媒体资源根、
-可播放项、章节关联和播放进度仍是计划模型；实现前必须在独立的 Library 持久化专题中
-确定关系、事务和生命周期。
+可播放项、章节关联和播放进度的领域类型已经落地；持久化关系、事务和生命周期见
+[`library/library_design.md`](library/library_design.md)，Store 仍待实现。
 UI 和播放层不得直接把 Bangumi ID、文件路径或 provider 私有 descriptor 当作核心
 对象身份。
 

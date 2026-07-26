@@ -1,0 +1,22 @@
+<RCC>
+    <qresource prefix="/qt/qml/AnimeLand">
+        <file>Main.qml</file>
+        <file>qmldir</file>
+        <file>Theme.qml</file>
+        <file>FixtureData.qml</file>
+        <file>AppText.qml</file>
+        <file>AppButton.qml</file>
+        <file>NavigationItem.qml</file>
+        <file>PageHeader.qml</file>
+        <file>SectionHeader.qml</file>
+        <file>SubjectCard.qml</file>
+        <file>EpisodeRow.qml</file>
+        <file>SettingCard.qml</file>
+        <file>HomePage.qml</file>
+        <file>LibraryPage.qml</file>
+        <file>BangumiPage.qml</file>
+        <file>SubjectDetailPage.qml</file>
+        <file>PlayerPage.qml</file>
+        <file>SettingsPage.qml</file>
+    </qresource>
+</RCC>

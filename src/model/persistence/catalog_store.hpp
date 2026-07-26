@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/library/identity.hpp"
 #include "model/persistence/database.hpp"
 
 #include <QDate>
@@ -16,17 +17,8 @@
 
 namespace anime_land::persistence {
 
-/// 应用内部稳定的条目主键，不与任何远端服务 ID 混用。
-struct SubjectId {
-    std::int64_t value = 0;
-    auto operator<=>(const SubjectId &) const = default;
-};
-
-/// 应用内部稳定的章节主键。
-struct EpisodeId {
-    std::int64_t value = 0;
-    auto operator<=>(const EpisodeId &) const = default;
-};
+using ::anime_land::EpisodeId;
+using ::anime_land::SubjectId;
 
 /// 快照包含的元数据完整度；高完整度数据不会被摘要快照降级。
 enum class SubjectMetadataLevel : std::int64_t {

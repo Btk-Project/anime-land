@@ -18,6 +18,7 @@
 #include "view/cli/bangumi_cli_command.hpp"
 #include "view/cli/bangumi_cli_options.hpp"
 #include "view/cli/bangumi_cli_view.hpp"
+#include "view/qml/qml_application.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -166,6 +167,26 @@ auto main(int argc, char **argv) -> int {
     ::SetConsoleOutputCP(65001);
     std::setlocale(LC_ALL, ".utf-8");
 #endif
+
+    if (argc == 1) {
+#ifndef ANIME_LAND_USE_SPDLOG
+        if (!qEnvironmentVariableIsSet("QT_MESSAGE_PATTERN")) {
+            qSetMessagePattern(QStringLiteral(
+                "[%{time yyyy-MM-dd hh:mm:ss.zzz}] [%{type}] "
+                "[%{file}:%{line}] %{message}"));
+        }
+#endif
+        QGuiApplication application(argc, argv);
+        QCoreApplication::setOrganizationName(QStringLiteral("Btk-Project"));
+        QCoreApplication::setApplicationName(QStringLiteral("anime-land"));
+        QCoreApplication::setApplicationVersion(
+            QStringLiteral(ANIME_LAND_VERSION_STRING));
+        AL_LOG_INFO("[app] starting fixture QML shell version={}",
+                    ANIME_LAND_VERSION_STRING);
+        const int exitCode = qml::runApplication(application);
+        AL_LOG_INFO("[app] stopped fixture QML shell exit_code={}", exitCode);
+        return exitCode;
+    }
 
     auto parsed = parseCommand(argc, argv);
     if (!parsed.command) {

@@ -118,7 +118,8 @@ Presentation 负责：
 当前 C++ `BangumiView`、Bangumi Presenter 与 CLI View 是已实现的 MVP 适配器。迁移到 QML 时允许
 Presenter 演化为 QObject ViewModel，但不得把 Auth、Client 或 TokenStore 暴露给
 QML。CLI 可以保留自己的具体 View，不要求与 QML 共享渲染接口；两者共享 Model
-用例和错误语义。
+用例和错误语义。当前 fixture 主界面和页面设计见
+[view/qml_ui_design.md](view/qml_ui_design.md)。
 
 ## 5. Model 子模块
 
@@ -159,7 +160,8 @@ Bangumi DTO
 
 UI 和播放层不得把 Bangumi ID、文件路径或 provider 私有 descriptor 当作核心对象
 身份。远端 DTO 到持久化快照的映射由 Library 或专门的导入服务完成，Bangumi Client
-不直接写数据库。
+不直接写数据库。当前身份、媒体资源、可播放项、章节关联和进度的数据语义见
+[library/library_design.md](library/library_design.md)。
 
 ### 5.4 Persistence
 
@@ -204,6 +206,7 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 | `src/model/persistence/` | CatalogStore 已实现，尚未接入主流程 |
 | `src/presentation/bangumi/` | Presenter 已与 CLI 参数类型解耦 |
 | `src/view/cli/` | CLI 参数、命令分派、查询转换、退出码和具体 View |
+| `src/view/qml/` | fixture 应用壳、主题、六个主要页面和公共组件已实现，真实 ViewModel 待接入 |
 | `tests/unit/model/{bangumi,persistence}/` | Model 单元测试已随模块迁移 |
 | `tests/unit/view/cli/` | CLI 参数测试已随 View 迁移 |
 
@@ -212,9 +215,9 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 | 当前入口 | 目标目录 | 状态 |
 | --- | --- | --- |
 | `src/main.cpp` 中的装配代码 | `src/runtime/` | 尚未抽取 AppRuntime |
-| 无 | `src/view/qml/` | 尚未实现正式 QML View |
+| QML fixture | `src/view/qml/` | 页面和导航骨架已实现，待逐页替换为真实 Presentation 数据 |
 | 无 | `src/model/playback/` | 尚未实现 PlaybackSession |
-| 无 | `src/model/library/` | 尚未实现媒体关联和进度闭环 |
+| Library 领域设计 | `src/model/library/` | 已实现稳定身份、媒体资源、可播放项、章节关联、进度与校验；Store 和闭环待实现 |
 | 无 | `src/media/` | 尚未接入 nekoav、媒体 I/O 和 Renderer |
 
 后续迁移应随对应功能修改逐步进行，不为目录整洁单独制造没有行为收益的大规模重命名。

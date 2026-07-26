@@ -45,6 +45,10 @@ local function default_test_config(file)
         config.run_timeout = 10000
         config.deps = {"model"}
         config.qt_frameworks = {"QtCore"}
+    elseif group == "library" then
+        config.run_timeout = 5000
+        config.deps = {"model"}
+        config.qt_frameworks = {"QtCore"}
     -- else
         -- append_values(config.files, "../src/proto_base.cpp", "../src/jsonrpc.cpp")
     end
