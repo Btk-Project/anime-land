@@ -138,10 +138,11 @@ Store 还提供资源批量 upsert、资源查询、资源/子项列表、媒体
 递归扫描仍须单独定义“完整快照”语义；文件名自动匹配、播放进度、最近播放、内置播放
 和显式整资源删除尚未落地。
 
-真实 QML 当前把扁平媒体投影重新组织为父目录资源组：一个目录显示为一个待整理分组，
-组内每个文件仍是独立 `SourceItem`，可播放、关联/解除章节，或通过右键菜单确认后从库
-中移除。该分组不是动画条目或季度；当前卡片显示关联的 Subject/Episode 标题，并可用
-本地 `SubjectId` 进入真实数据库详情，后续再把媒体库主层级提升为按 `Subject` 展示。
+真实 QML 将扁平媒体投影为两条互斥分支：有关联的 `SourceItem` 按
+`SubjectId → EpisodeId → SourceItemId` 显示，无关联文件才按父目录进入“待整理”区。
+同一文件可因多对多关系出现在多个章节下，但条目和全局媒体数均按唯一文件计算。
+章节下的卡片带有 `contextAssociation`，所以多重关联也能精确解除当前章节；播放、追加关联、
+条目详情和安全移除入口仍保留在单文件卡片。
 
 条目详情读取同样由 `LocalMediaImportService` 编排，而不是让 Presentation 直接访问两个
 Store：`getSubjectLibraryDetails(SubjectId)` 读取 Catalog Subject/Episode，再按 Episode
@@ -163,7 +164,8 @@ Subject/Episode；Episode 按外部 ID upsert，因此连载中后续公布的�
   条目详情快照、远端 Subject/Episode 目录同步和安全外部播放用例；
 - `persistence/library_schema.hpp`：三张 Library 关系及跨 Store 外键；
 - `persistence/library_store.*`：媒体资源、可播放项、章节关联和空资源清理的事务持久化；
-- `presentation/library/library_view_model.*`：QML 资源组/关联 DTO、导入、关联、解除、播放、移除状态和错误映射；
+- `presentation/library/library_view_model.*`：QML 唯一媒体、Subject/Episode 层级、未关联目录/
+  关联 DTO，以及导入、关联、解除、播放、移除状态和错误映射；
 - `presentation/library/subject_details_view_model.*`：数据库 Subject/Episode/关联媒体 DTO、
   外部身份反查和章节播放；
 - `test_library_foundation.cpp`、`test_library_store.cpp` 与

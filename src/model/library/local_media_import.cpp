@@ -511,11 +511,7 @@ auto LocalMediaImportService::listLibraryMedia()
                     (*episode)->titleCn.value_or(QString {}),
                     (*episode)->title.value_or(QString {}));
                 if (episodeTitle.isEmpty()) {
-                    episodeTitle = QStringLiteral("章节 %1")
-                                       .arg((*episode)->episodeNumber
-                                                .value_or(static_cast<double>(
-                                                    (*episode)->sortOrder + 1)),
-                                            0, 'g', 8);
+                    episodeTitle = QStringLiteral("标题待公布");
                 }
                 value.associations.push_back({
                     .episodeId = (*episode)->id,
@@ -523,6 +519,8 @@ auto LocalMediaImportService::listLibraryMedia()
                     .subjectTitle = subjectTitle,
                     .episodeTitle = episodeTitle,
                     .episodeNumber = (*episode)->episodeNumber,
+                    .episodeType = (*episode)->episodeType,
+                    .sortOrder = (*episode)->sortOrder,
                 });
             }
         }

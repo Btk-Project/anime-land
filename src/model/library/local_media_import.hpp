@@ -37,6 +37,8 @@ struct MediaAssociationSummary {
     QString subjectTitle;
     QString episodeTitle;
     std::optional<double> episodeNumber;
+    int episodeType = 0;
+    int sortOrder = 0;
 };
 
 struct LibraryMediaEntry {

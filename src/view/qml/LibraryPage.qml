@@ -15,16 +15,60 @@ Item {
     property var sourceItems: uiFixtureMode
             ? FixtureData.subjects
             : (libraryViewModel ? libraryViewModel.mediaItems : [])
-    property var sourceGroups: !uiFixtureMode && libraryViewModel
-            ? libraryViewModel.mediaGroups : []
+    property var sourceSubjectGroups: !uiFixtureMode && libraryViewModel
+            ? libraryViewModel.subjectGroups : []
+    property var sourceUnassociatedGroups: !uiFixtureMode && libraryViewModel
+            ? libraryViewModel.unassociatedGroups : []
     property var visibleItems: sourceItems.filter(function(item) {
         return root.matchesItem(item)
     })
-    property var visibleGroups: {
+    property var visibleSubjectGroups: {
         if (uiFixtureMode)
             return []
         const groups = []
-        sourceGroups.forEach(function(group) {
+        sourceSubjectGroups.forEach(function(subject) {
+            const episodes = []
+            const mediaIds = ({})
+            let mediaCount = 0
+            subject.episodes.forEach(function(episode) {
+                const items = episode.items.filter(function(item) {
+                    return root.matchesItem(item)
+                })
+                if (items.length > 0) {
+                    items.forEach(function(item) {
+                        if (!mediaIds[item.id]) {
+                            mediaIds[item.id] = true
+                            mediaCount += 1
+                        }
+                    })
+                    episodes.push({
+                        episodeId: episode.episodeId,
+                        title: episode.title,
+                        number: episode.number,
+                        label: episode.label,
+                        totalItemCount: episode.itemCount,
+                        items: items
+                    })
+                }
+            })
+            if (episodes.length > 0) {
+                groups.push({
+                    subjectId: subject.subjectId,
+                    title: subject.title,
+                    totalEpisodeCount: subject.episodeCount,
+                    episodeCount: episodes.length,
+                    mediaCount: mediaCount,
+                    episodes: episodes
+                })
+            }
+        })
+        return groups
+    }
+    property var visibleUnassociatedGroups: {
+        if (uiFixtureMode)
+            return []
+        const groups = []
+        sourceUnassociatedGroups.forEach(function(group) {
             const items = group.items.filter(function(item) {
                 return root.matchesItem(item)
             })
@@ -42,9 +86,10 @@ Item {
 
     function matchesItem(item) {
         const query = searchField.text.trim().toLowerCase()
+        const searchText = item.searchText
+                ? item.searchText : (item.title + " " + item.subtitle)
         const matchesText = query.length === 0
-                || item.title.toLowerCase().indexOf(query) >= 0
-                || item.subtitle.toLowerCase().indexOf(query) >= 0
+                || searchText.toLowerCase().indexOf(query) >= 0
         if (!matchesText)
             return false
         if (activeFilter === "全部")
@@ -473,7 +518,7 @@ Item {
                 title: "媒体库"
                 subtitle: uiFixtureMode
                           ? "浏览本地条目、观看进度和媒体关联状态。"
-                          : "导入本地媒体文件，稍后再与动画条目和章节关联。"
+                          : "已关联媒体按条目与章节整理，未关联文件保留在待整理区。"
             }
 
             Row {
@@ -558,7 +603,9 @@ Item {
                           ? "正在移除…"
                           : uiFixtureMode
                             ? root.visibleItems.length + " 个条目"
-                            : root.visibleGroups.length + " 个目录 · "
+                            : root.visibleSubjectGroups.length + " 个条目 · "
+                              + root.visibleUnassociatedGroups.length
+                              + " 个待整理目录 · "
                               + root.visibleItems.length + " 个媒体文件"
             }
 
@@ -579,77 +626,223 @@ Item {
             }
 
             Column {
-                id: mediaGroups
+                id: libraryHierarchy
                 width: parent.width
                 spacing: 16
                 visible: !uiFixtureMode && root.visibleItems.length > 0
 
                 Repeater {
-                    model: uiFixtureMode ? [] : root.visibleGroups
+                    model: uiFixtureMode ? [] : root.visibleSubjectGroups
 
                     Rectangle {
                         required property var modelData
 
-                        width: mediaGroups.width
-                        height: groupContent.implicitHeight + 32
-                        radius: Theme.radius
+                        width: libraryHierarchy.width
+                        height: subjectContent.implicitHeight + 32
+                        radius: Theme.radiusLarge
                         color: Theme.surface
                         border.width: 1
                         border.color: Theme.border
 
                         Column {
-                            id: groupContent
+                            id: subjectContent
                             x: 16
                             y: 16
                             width: parent.width - 32
                             spacing: 12
 
-                            SectionHeader {
+                            RowLayout {
                                 width: parent.width
-                                title: modelData.title
-                                detail: modelData.items.length
-                                        === modelData.totalItemCount
-                                        ? modelData.items.length + " 个文件"
-                                        : modelData.items.length + " / "
-                                          + modelData.totalItemCount + " 个文件"
+
+                                Column {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    AppText {
+                                        width: parent.width
+                                        text: modelData.title
+                                        color: Theme.text
+                                        font.pixelSize: Theme.headingSize
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    AppText {
+                                        width: parent.width
+                                        text: modelData.episodeCount
+                                              + " 个章节 · "
+                                              + modelData.mediaCount
+                                              + " 个媒体文件"
+                                        color: Theme.textFaint
+                                        font.pixelSize: Theme.captionSize
+                                    }
+                                }
+
+                                AppButton {
+                                    text: "查看条目详情"
+                                    enabled: !root.actionsBusy()
+                                    onClicked: root.openSubject({
+                                        subjectId: modelData.subjectId,
+                                        title: modelData.title,
+                                        subtitle: "",
+                                        meta: "本地数据库条目",
+                                        summary: "",
+                                        color: Theme.surfaceRaised
+                                    })
+                                }
                             }
 
-                            Flow {
-                                width: parent.width
-                                height: childrenRect.height
-                                spacing: 16
+                            Repeater {
+                                model: modelData.episodes
 
-                                Repeater {
-                                    model: modelData.items
+                                Rectangle {
+                                    required property var modelData
 
-                                    MediaItemCard {
-                                        media: modelData
-                                        actionEnabled: !root.actionsBusy()
-                                        onPlayRequested: selected =>
-                                                         libraryViewModel.playMedia(
-                                                             selected.id)
-                                        onLinkRequested: selected =>
-                                                         root.openAssociation(
-                                                             selected)
-                                        onDetailsRequested: function(selected,
-                                                                     association) {
-                                            root.openSubject({
-                                                subjectId: association.subjectId,
-                                                title: association.subjectTitle,
-                                                subtitle: "",
-                                                meta: "本地数据库条目",
-                                                summary: "",
-                                                color: selected.color
-                                            })
+                                    width: subjectContent.width
+                                    height: episodeContent.implicitHeight + 24
+                                    radius: Theme.radius
+                                    color: Theme.surfaceRaised
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Column {
+                                        id: episodeContent
+                                        x: 12
+                                        y: 12
+                                        width: parent.width - 24
+                                        spacing: 10
+
+                                        SectionHeader {
+                                            width: parent.width
+                                            title: modelData.label
+                                            detail: modelData.items.length
+                                                    === modelData.totalItemCount
+                                                    ? modelData.items.length
+                                                      + " 个文件"
+                                                    : modelData.items.length
+                                                      + " / "
+                                                      + modelData.totalItemCount
+                                                      + " 个文件"
                                         }
-                                        onUnlinkRequested: function(selected,
-                                                                    association) {
-                                            libraryViewModel.unlinkMedia(
-                                                        selected.id,
-                                                        association.episodeId)
+
+                                        Flow {
+                                            width: parent.width
+                                            height: childrenRect.height
+                                            spacing: 16
+
+                                            Repeater {
+                                                model: modelData.items
+
+                                                MediaItemCard {
+                                                    media: modelData
+                                                    contextAssociation:
+                                                        modelData.contextAssociation
+                                                    actionEnabled:
+                                                        !root.actionsBusy()
+                                                    onPlayRequested: selected =>
+                                                        libraryViewModel.playMedia(
+                                                            selected.id)
+                                                    onLinkRequested: selected =>
+                                                        root.openAssociation(
+                                                            selected)
+                                                    onDetailsRequested:
+                                                        function(selected,
+                                                                 association) {
+                                                        root.openSubject({
+                                                            subjectId:
+                                                                association.subjectId,
+                                                            title:
+                                                                association.subjectTitle,
+                                                            subtitle: "",
+                                                            meta:
+                                                                "本地数据库条目",
+                                                            summary: "",
+                                                            color: selected.color
+                                                        })
+                                                    }
+                                                    onUnlinkRequested:
+                                                        function(selected,
+                                                                 association) {
+                                                        libraryViewModel.unlinkMedia(
+                                                            selected.id,
+                                                            association.episodeId)
+                                                    }
+                                                    onRemoveRequested: selected =>
+                                                        root.confirmRemoval(selected)
+                                                }
+                                            }
                                         }
-                                        onRemoveRequested: selected =>
-                                                           root.confirmRemoval(selected)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 12
+                    visible: root.visibleUnassociatedGroups.length > 0
+
+                    SectionHeader {
+                        width: parent.width
+                        title: "待整理"
+                        detail: root.visibleUnassociatedGroups.length
+                                + " 个目录"
+                    }
+
+                    Repeater {
+                        model: root.visibleUnassociatedGroups
+
+                        Rectangle {
+                            required property var modelData
+
+                            width: libraryHierarchy.width
+                            height: unassociatedContent.implicitHeight + 32
+                            radius: Theme.radius
+                            color: Theme.surface
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Column {
+                                id: unassociatedContent
+                                x: 16
+                                y: 16
+                                width: parent.width - 32
+                                spacing: 12
+
+                                SectionHeader {
+                                    width: parent.width
+                                    title: modelData.title
+                                    detail: modelData.items.length
+                                            === modelData.totalItemCount
+                                            ? modelData.items.length
+                                              + " 个未关联文件"
+                                            : modelData.items.length + " / "
+                                              + modelData.totalItemCount
+                                              + " 个未关联文件"
+                                }
+
+                                Flow {
+                                    width: parent.width
+                                    height: childrenRect.height
+                                    spacing: 16
+
+                                    Repeater {
+                                        model: modelData.items
+
+                                        MediaItemCard {
+                                            media: modelData
+                                            actionEnabled:
+                                                !root.actionsBusy()
+                                            onPlayRequested: selected =>
+                                                libraryViewModel.playMedia(
+                                                    selected.id)
+                                            onLinkRequested: selected =>
+                                                root.openAssociation(selected)
+                                            onRemoveRequested: selected =>
+                                                root.confirmRemoval(selected)
+                                        }
                                     }
                                 }
                             }

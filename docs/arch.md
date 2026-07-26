@@ -127,8 +127,9 @@ ViewModel，View 只获得后者。`ANIME_LAND_UI_FIXTURE=1` 绕过这条装配�
 用于单独修改 View；fixture 开关不得散落到 Model 或协议代码中。
 
 媒体库是第二个真实切片：`LibraryViewModel` 只调用
-`LocalMediaImportService`，负责加载状态、导入/移除反馈、扁平媒体与父目录资源组的 UI
-DTO 映射；QML 文件选择器只把用户明确选择的本地 URL 交给 ViewModel，右键移除只提交
+`LocalMediaImportService`，负责加载状态、导入/移除反馈、扁平唯一媒体、已关联
+Subject → Episode → SourceItem 层级和未关联父目录组的 UI DTO 映射；QML 文件选择器只把
+用户明确选择的本地 URL 交给 ViewModel，右键移除只提交
 本地 `SourceItemId`，两者都不接触 Store、SQL 或 provider descriptor。
 
 条目详情是第三个真实切片：`SubjectDetailsViewModel` 通过应用服务取得 Catalog 的
@@ -136,8 +137,9 @@ Subject/Episode 与 Library 的 EpisodeMediaLink/SourceItem 合并快照，再�
 本地导航只传 `SubjectId` 或 Bangumi 外部身份，章节播放只传 `EpisodeId`；Presentation
 和 QML 都不直接跨 Store 查询。fixture 模式仍可独立渲染静态详情；真实模式遇到尚未写入
 CatalogStore 的远端条目时，由 Model 先读取 Bangumi 完整 Subject/章节并持久化，再按本地
-`SubjectId` 重新读取详情，不得把远端 DTO 或 fixture 直接交给页面。已有 Details 快照直接
-离线复用，已有 Summary 在远端升级失败时仍可作为本地回退。
+`SubjectId` 重新读取详情，不得把远端 DTO 或 fixture 直接交给页面。已有 Details 快照在
+6 小时新鲜期内直接复用，过期时刷新 Subject/Episode；已有本地数据在远端失败时仍可
+离线回退。
 
 ## 5. Model 子模块
 
@@ -237,9 +239,9 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 | --- | --- |
 | `src/model/bangumi/` | 登录、搜索、每日放送、公开章节读取、收藏读取已实现 |
 | `src/model/persistence/` | CatalogStore 与 LibraryStore 已实现；后者支持媒体导入/移除和 EpisodeMediaLink 持久化 |
-| `src/presentation/{bangumi,library}/` | Calendar 与 Library QObject ViewModel 已接入 QML；Library 支持目录组、关联、解除和外部播放状态 |
+| `src/presentation/{bangumi,library}/` | Calendar 与 Library QObject ViewModel 已接入 QML；Library 支持 Subject/Episode 层级、未关联目录组、关联、解除和外部播放状态 |
 | `src/view/cli/` | CLI 参数、命令分派、查询转换、退出码和具体 View |
-| `src/view/qml/` | 每日放送与媒体导入/分组/关联/播放/移除使用真实 ViewModel；其余页面保留 fixture；支持全局 fixture 调试开关 |
+| `src/view/qml/` | 每日放送与媒体导入/层级/关联/播放/移除使用真实 ViewModel；其余页面保留 fixture；支持全局 fixture 调试开关 |
 | `tests/unit/model/{bangumi,persistence}/` | Model 单元测试已随模块迁移 |
 | `tests/unit/view/cli/` | CLI 参数测试已随 View 迁移 |
 

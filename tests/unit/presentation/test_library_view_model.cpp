@@ -108,13 +108,15 @@ TEST(LibraryViewModel, MapsLocalMediaToQmlState) {
               QStringLiteral("Frieren"));
     EXPECT_EQ(media.value(QStringLiteral("status")).toString(),
               QStringLiteral("未关联"));
-    ASSERT_EQ(viewModel.mediaGroups().size(), 1);
-    const auto group = viewModel.mediaGroups().front().toMap();
-    EXPECT_EQ(group.value(QStringLiteral("resourceId")).toLongLong(), 7);
-    EXPECT_EQ(group.value(QStringLiteral("title")).toString(),
-              QStringLiteral("Frieren"));
-    EXPECT_EQ(group.value(QStringLiteral("itemCount")).toInt(), 1);
-    EXPECT_EQ(group.value(QStringLiteral("items")).toList().size(), 1);
+    EXPECT_TRUE(viewModel.subjectGroups().isEmpty());
+    ASSERT_EQ(viewModel.unassociatedGroups().size(), 1);
+    EXPECT_EQ(viewModel.unassociatedGroups()
+                  .front()
+                  .toMap()
+                  .value(QStringLiteral("items"))
+                  .toList()
+                  .size(),
+              1);
 }
 
 TEST(LibraryViewModel, MapsPersistedEpisodeAssociationToMediaCard) {
@@ -151,6 +153,122 @@ TEST(LibraryViewModel, MapsPersistedEpisodeAssociationToMediaCard) {
                   .value(QStringLiteral("episodeId"))
                   .toLongLong(),
               31);
+    EXPECT_TRUE(viewModel.unassociatedGroups().isEmpty());
+    ASSERT_EQ(viewModel.subjectGroups().size(), 1);
+    const auto subject = viewModel.subjectGroups().front().toMap();
+    EXPECT_EQ(subject.value(QStringLiteral("subjectId")).toLongLong(), 21);
+    EXPECT_EQ(subject.value(QStringLiteral("title")).toString(),
+              QStringLiteral("葬送的芙莉莲"));
+    EXPECT_EQ(subject.value(QStringLiteral("episodeCount")).toInt(), 1);
+    EXPECT_EQ(subject.value(QStringLiteral("mediaCount")).toInt(), 1);
+    const auto episodeGroups =
+        subject.value(QStringLiteral("episodes")).toList();
+    ASSERT_EQ(episodeGroups.size(), 1);
+    const auto episode = episodeGroups.front().toMap();
+    EXPECT_EQ(episode.value(QStringLiteral("episodeId")).toLongLong(), 31);
+    EXPECT_EQ(episode.value(QStringLiteral("number")).toString(),
+              QStringLiteral("EP1"));
+    const auto episodeItems =
+        episode.value(QStringLiteral("items")).toList();
+    ASSERT_EQ(episodeItems.size(), 1);
+    EXPECT_EQ(episodeItems.front()
+                  .toMap()
+                  .value(QStringLiteral("subtitle"))
+                  .toString(),
+              QStringLiteral("Frieren"));
+    EXPECT_EQ(episodeItems.front()
+                  .toMap()
+                  .value(QStringLiteral("contextAssociation"))
+                  .toMap()
+                  .value(QStringLiteral("episodeId"))
+                  .toLongLong(),
+              31);
+}
+
+TEST(LibraryViewModel,
+     SortsSubjectEpisodesAndKeepsUnassociatedFilesSeparate) {
+    LibraryViewModel viewModel(
+        []() -> ilias::Task<
+            LibraryResult<std::vector<LibraryMediaEntry>>> {
+            auto episodeTwo =
+                sampleEntries(QStringLiteral("episode-02.mkv")).front();
+            episodeTwo.item.id = SourceItemId {12};
+            episodeTwo.item.stableKey = QStringLiteral("episode-02.mkv");
+            episodeTwo.item.displayName = QStringLiteral("episode-02.mkv");
+
+            auto pending =
+                sampleEntries(QStringLiteral("pending-03.mkv")).front();
+            pending.resource.id = MediaResourceId {8};
+            pending.resource.stableKey = QStringLiteral("d:/anime/pending");
+            pending.resource.displayName = QStringLiteral("Pending");
+            pending.item.id = SourceItemId {13};
+            pending.item.resourceId = MediaResourceId {8};
+            pending.item.stableKey = QStringLiteral("pending-03.mkv");
+            pending.item.displayName = QStringLiteral("pending-03.mkv");
+
+            co_return std::vector<LibraryMediaEntry> {
+                {
+                    .media = std::move(episodeTwo),
+                    .associations = {{
+                        .episodeId = EpisodeId {32},
+                        .subjectId = SubjectId {21},
+                        .subjectTitle = QStringLiteral("葬送的芙莉莲"),
+                        .episodeTitle = QStringLiteral("不需要魔法也能看见的世界"),
+                        .episodeNumber = 2.0,
+                        .episodeType = 0,
+                        .sortOrder = 1,
+                    }},
+                },
+                {
+                    .media = std::move(pending),
+                    .associations = {},
+                },
+                {
+                    .media = sampleEntries().front(),
+                    .associations = {{
+                        .episodeId = EpisodeId {31},
+                        .subjectId = SubjectId {21},
+                        .subjectTitle = QStringLiteral("葬送的芙莉莲"),
+                        .episodeTitle = QStringLiteral("冒险的终点"),
+                        .episodeNumber = 1.0,
+                        .episodeType = 0,
+                        .sortOrder = 0,
+                    }},
+                },
+            };
+        });
+
+    viewModel.refresh();
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(viewModel.mediaCount(), 3);
+    ASSERT_EQ(viewModel.subjectGroups().size(), 1);
+    const auto subject = viewModel.subjectGroups().front().toMap();
+    EXPECT_EQ(subject.value(QStringLiteral("mediaCount")).toInt(), 2);
+    const auto episodes = subject.value(QStringLiteral("episodes")).toList();
+    ASSERT_EQ(episodes.size(), 2);
+    EXPECT_EQ(episodes.at(0)
+                  .toMap()
+                  .value(QStringLiteral("number"))
+                  .toString(),
+              QStringLiteral("EP1"));
+    EXPECT_EQ(episodes.at(1)
+                  .toMap()
+                  .value(QStringLiteral("number"))
+                  .toString(),
+              QStringLiteral("EP2"));
+    ASSERT_EQ(viewModel.unassociatedGroups().size(), 1);
+    const auto pendingItems = viewModel.unassociatedGroups()
+                                  .front()
+                                  .toMap()
+                                  .value(QStringLiteral("items"))
+                                  .toList();
+    ASSERT_EQ(pendingItems.size(), 1);
+    EXPECT_EQ(pendingItems.front()
+                  .toMap()
+                  .value(QStringLiteral("id"))
+                  .toLongLong(),
+              13);
 }
 
 TEST(LibraryViewModel, ImportsThenReloadsMediaAndReportsDuplicates) {

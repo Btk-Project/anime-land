@@ -3,6 +3,7 @@
 #include "common/log.hpp"
 
 #include <QHash>
+#include <QSet>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -17,15 +18,75 @@ constexpr std::array<const char *, 8> kMediaColors = {
     "#5c626d", "#545d63", "#655b60", "#58656a",
 };
 
-auto associationLabel(const MediaAssociationSummary &association) -> QString {
-    QString episode = association.episodeTitle;
-    if (association.episodeNumber) {
-        episode = QStringLiteral("EP%1 · %2")
-                      .arg(*association.episodeNumber, 0, 'g', 8)
-                      .arg(association.episodeTitle);
+struct EpisodeMediaGroup {
+    qlonglong episodeId = 0;
+    QString title;
+    QString number;
+    std::optional<double> episodeNumber;
+    int sortOrder = 0;
+    QVariantList items;
+};
+
+struct SubjectMediaGroup {
+    qlonglong subjectId = 0;
+    QString title;
+    QHash<qlonglong, qsizetype> episodeIndices;
+    std::vector<EpisodeMediaGroup> episodes;
+    QSet<qlonglong> mediaIds;
+};
+
+auto episodeTypePrefix(int type) -> QString {
+    switch (type) {
+        case 0:
+            return QStringLiteral("EP");
+        case 1:
+            return QStringLiteral("SP");
+        case 2:
+            return QStringLiteral("OP");
+        case 3:
+            return QStringLiteral("ED");
+        case 4:
+            return QStringLiteral("PV");
+        case 5:
+            return QStringLiteral("MAD");
+        default:
+            return QStringLiteral("章节");
     }
+}
+
+auto episodeNumberLabel(const MediaAssociationSummary &association)
+    -> QString {
+    if (!association.episodeNumber) {
+        return episodeTypePrefix(association.episodeType);
+    }
+    return QStringLiteral("%1%2")
+        .arg(episodeTypePrefix(association.episodeType))
+        .arg(*association.episodeNumber, 0, 'g', 8);
+}
+
+auto associationLabel(const MediaAssociationSummary &association) -> QString {
+    const QString episode = QStringLiteral("%1 · %2")
+                                .arg(episodeNumberLabel(association),
+                                     association.episodeTitle);
     return QStringLiteral("%1 · %2")
         .arg(association.subjectTitle, episode);
+}
+
+auto associationMap(const MediaAssociationSummary &association)
+    -> QVariantMap {
+    return {
+        {QStringLiteral("episodeId"), association.episodeId.value},
+        {QStringLiteral("subjectId"), association.subjectId.value},
+        {QStringLiteral("subjectTitle"), association.subjectTitle},
+        {QStringLiteral("episodeTitle"), association.episodeTitle},
+        {QStringLiteral("episodeNumber"),
+         association.episodeNumber
+             ? QVariant {*association.episodeNumber}
+             : QVariant {}},
+        {QStringLiteral("episodeType"), association.episodeType},
+        {QStringLiteral("number"), episodeNumberLabel(association)},
+        {QStringLiteral("label"), associationLabel(association)},
+    };
 }
 
 auto mediaEntryMap(const LibraryMediaEntry &entry) -> QVariantMap {
@@ -35,14 +96,13 @@ auto mediaEntryMap(const LibraryMediaEntry &entry) -> QVariantMap {
 
     QVariantList associations;
     associations.reserve(static_cast<qsizetype>(entry.associations.size()));
+    QStringList searchTerms {entry.media.item.displayName,
+                             entry.media.resource.displayName};
     for (const auto &association : entry.associations) {
-        associations.push_back(QVariantMap {
-            {QStringLiteral("episodeId"), association.episodeId.value},
-            {QStringLiteral("subjectId"), association.subjectId.value},
-            {QStringLiteral("subjectTitle"), association.subjectTitle},
-            {QStringLiteral("episodeTitle"), association.episodeTitle},
-            {QStringLiteral("label"), associationLabel(association)},
-        });
+        associations.push_back(associationMap(association));
+        searchTerms.push_back(association.subjectTitle);
+        searchTerms.push_back(association.episodeTitle);
+        searchTerms.push_back(episodeNumberLabel(association));
     }
 
     QVariantMap value;
@@ -67,9 +127,35 @@ auto mediaEntryMap(const LibraryMediaEntry &entry) -> QVariantMap {
     value.insert(QStringLiteral("associationCount"),
                  static_cast<int>(entry.associations.size()));
     value.insert(QStringLiteral("associations"), associations);
+    value.insert(QStringLiteral("searchText"),
+                 searchTerms.join(QLatin1Char('\n')).toCaseFolded());
     value.insert(QStringLiteral("color"),
                  QString::fromLatin1(kMediaColors[colorIndex]));
     return value;
+}
+
+void appendDirectoryItem(QVariantList &groups,
+                         QHash<qlonglong, qsizetype> &groupIndices,
+                         const LibraryMediaEntry &entry,
+                         const QVariantMap &media) {
+    const qlonglong resourceId = entry.media.resource.id.value;
+    qsizetype groupIndex = groupIndices.value(resourceId, -1);
+    if (groupIndex < 0) {
+        groupIndex = groups.size();
+        groupIndices.insert(resourceId, groupIndex);
+        groups.push_back(QVariantMap {
+            {QStringLiteral("resourceId"), resourceId},
+            {QStringLiteral("title"), entry.media.resource.displayName},
+            {QStringLiteral("itemCount"), 0},
+            {QStringLiteral("items"), QVariantList {}},
+        });
+    }
+    QVariantMap group = groups[groupIndex].toMap();
+    QVariantList groupItems = group.value(QStringLiteral("items")).toList();
+    groupItems.push_back(media);
+    group.insert(QStringLiteral("itemCount"), groupItems.size());
+    group.insert(QStringLiteral("items"), groupItems);
+    groups[groupIndex] = std::move(group);
 }
 
 auto subjectMap(const BangumiSearchSubject &subject) -> QVariantMap {
@@ -542,34 +628,119 @@ auto LibraryViewModel::play(SourceItemId item, std::uint64_t generation)
 void LibraryViewModel::applyMedia(
     const std::vector<LibraryMediaEntry> &entries) {
     QVariantList items;
-    QVariantList groups;
-    QHash<qlonglong, qsizetype> groupIndices;
+    QVariantList unassociatedGroups;
+    QHash<qlonglong, qsizetype> unassociatedGroupIndices;
+    std::vector<SubjectMediaGroup> subjects;
+    QHash<qlonglong, qsizetype> subjectIndices;
     items.reserve(static_cast<qsizetype>(entries.size()));
+
     for (const auto &entry : entries) {
         const QVariantMap media = mediaEntryMap(entry);
         items.push_back(media);
 
-        const qlonglong resourceId = entry.media.resource.id.value;
-        qsizetype groupIndex = groupIndices.value(resourceId, -1);
-        if (groupIndex < 0) {
-            groupIndex = groups.size();
-            groupIndices.insert(resourceId, groupIndex);
-            groups.push_back(QVariantMap {
-                {QStringLiteral("resourceId"), resourceId},
-                {QStringLiteral("title"), entry.media.resource.displayName},
-                {QStringLiteral("itemCount"), 0},
-                {QStringLiteral("items"), QVariantList {}},
+        if (entry.associations.empty()) {
+            appendDirectoryItem(unassociatedGroups,
+                                unassociatedGroupIndices, entry, media);
+            continue;
+        }
+
+        for (const auto &association : entry.associations) {
+            const qlonglong subjectId = association.subjectId.value;
+            qsizetype subjectIndex = subjectIndices.value(subjectId, -1);
+            if (subjectIndex < 0) {
+                subjectIndex = static_cast<qsizetype>(subjects.size());
+                subjectIndices.insert(subjectId, subjectIndex);
+                subjects.push_back({
+                    .subjectId = subjectId,
+                    .title = association.subjectTitle,
+                });
+            }
+
+            auto &subject = subjects[static_cast<std::size_t>(subjectIndex)];
+            subject.mediaIds.insert(entry.media.item.id.value);
+            const qlonglong episodeId = association.episodeId.value;
+            qsizetype episodeIndex =
+                subject.episodeIndices.value(episodeId, -1);
+            if (episodeIndex < 0) {
+                episodeIndex =
+                    static_cast<qsizetype>(subject.episodes.size());
+                subject.episodeIndices.insert(episodeId, episodeIndex);
+                subject.episodes.push_back({
+                    .episodeId = episodeId,
+                    .title = association.episodeTitle,
+                    .number = episodeNumberLabel(association),
+                    .episodeNumber = association.episodeNumber,
+                    .sortOrder = association.sortOrder,
+                });
+            }
+
+            QVariantMap groupedMedia = media;
+            groupedMedia.insert(QStringLiteral("subtitle"),
+                                entry.media.resource.displayName);
+            groupedMedia.insert(QStringLiteral("contextAssociation"),
+                                associationMap(association));
+            subject.episodes[static_cast<std::size_t>(episodeIndex)]
+                .items.push_back(std::move(groupedMedia));
+        }
+    }
+
+    std::sort(subjects.begin(), subjects.end(),
+              [](const SubjectMediaGroup &left,
+                 const SubjectMediaGroup &right) {
+                  const int titleOrder = QString::localeAwareCompare(
+                      left.title, right.title);
+                  return titleOrder == 0
+                             ? left.subjectId < right.subjectId
+                             : titleOrder < 0;
+              });
+
+    QVariantList subjectGroups;
+    subjectGroups.reserve(static_cast<qsizetype>(subjects.size()));
+    for (auto &subject : subjects) {
+        std::sort(subject.episodes.begin(), subject.episodes.end(),
+                  [](const EpisodeMediaGroup &left,
+                     const EpisodeMediaGroup &right) {
+                      if (left.episodeNumber && right.episodeNumber
+                          && *left.episodeNumber != *right.episodeNumber) {
+                          return *left.episodeNumber < *right.episodeNumber;
+                      }
+                      if (left.episodeNumber.has_value()
+                          != right.episodeNumber.has_value()) {
+                          return left.episodeNumber.has_value();
+                      }
+                      if (left.sortOrder != right.sortOrder) {
+                          return left.sortOrder < right.sortOrder;
+                      }
+                      return left.episodeId < right.episodeId;
+                  });
+
+        QVariantList episodeGroups;
+        episodeGroups.reserve(
+            static_cast<qsizetype>(subject.episodes.size()));
+        for (auto &episode : subject.episodes) {
+            episodeGroups.push_back(QVariantMap {
+                {QStringLiteral("episodeId"), episode.episodeId},
+                {QStringLiteral("title"), episode.title},
+                {QStringLiteral("number"), episode.number},
+                {QStringLiteral("label"),
+                 QStringLiteral("%1 · %2")
+                     .arg(episode.number, episode.title)},
+                {QStringLiteral("itemCount"), episode.items.size()},
+                {QStringLiteral("items"), std::move(episode.items)},
             });
         }
-        QVariantMap group = groups[groupIndex].toMap();
-        QVariantList groupItems = group.value(QStringLiteral("items")).toList();
-        groupItems.push_back(media);
-        group.insert(QStringLiteral("itemCount"), groupItems.size());
-        group.insert(QStringLiteral("items"), groupItems);
-        groups[groupIndex] = std::move(group);
+        subjectGroups.push_back(QVariantMap {
+            {QStringLiteral("subjectId"), subject.subjectId},
+            {QStringLiteral("title"), subject.title},
+            {QStringLiteral("episodeCount"), episodeGroups.size()},
+            {QStringLiteral("mediaCount"), subject.mediaIds.size()},
+            {QStringLiteral("episodes"), std::move(episodeGroups)},
+        });
     }
+
     mMediaItems = std::move(items);
-    mMediaGroups = std::move(groups);
+    mSubjectGroups = std::move(subjectGroups);
+    mUnassociatedGroups = std::move(unassociatedGroups);
 }
 
 } // namespace anime_land

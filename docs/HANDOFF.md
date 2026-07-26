@@ -36,7 +36,8 @@ main.cpp 是当前 Composition Root；后续才抽到 src/runtime/。
 
 - `BangumiCalendarViewModel`：真实 Bangumi 每日放送；
 - `LibraryViewModel`：真实本地数据库、文件选择导入、Bangumi 搜索/章节读取、手动关联/
-  解除和系统播放器入口；
+  解除、系统播放器入口，以及已关联媒体的 Subject → Episode → SourceItem
+  层级投影；
 - `SubjectDetailsViewModel`：从 CatalogStore 读取本地条目/章节，并与 LibraryStore 的
   `EpisodeMediaLink`、`SourceItem` 合并成详情 DTO；支持从章节调用系统播放器。
 
@@ -98,8 +99,15 @@ MediaItemCard 右键“查看条目详情”
     → 无关联章节仍显示，已关联章节可播放
 ```
 
-真实 Library 页面同时把扁平 `MediaEntry` 投影组织为父目录资源组；组内仍按一个文件一个
-`SourceItem` 显示。移除链路为：
+真实 Library 页面同时保留唯一媒体扁平列表，并产生两个互斥的显示投影：
+
+- 有 `EpisodeMediaLink` 的文件进入 `subjectGroups`，按 `SubjectId`，再按 `EpisodeId`
+  展开；
+- 无任何关联的文件进入 `unassociatedGroups`，仍按父目录显示为“待整理”。
+
+同一 `SourceItem` 如果确实关联多个章节，会在对应章节下分别出现；章节上下文被带入
+卡片菜单，所以可精确解除该章节关联。顶部媒体数仍按唯一 `SourceItem` 计数。
+移除链路为：
 
 ```text
 MediaItemCard 右键“从媒体库移除”
@@ -114,7 +122,7 @@ LibraryStore::removeSourceItem()（单事务）
     ↓
 删除 source_item；最后一个子项删除后清理空 media_resource
     ↓
-LibraryViewModel 重新加载扁平列表与资源组 DTO
+LibraryViewModel 重新加载扁平列表、Subject/Episode 层级与待整理 DTO
 ```
 
 ### 3.1 用户刚报告并已修复的问题
@@ -143,6 +151,10 @@ Q_INVOKABLE void importFiles(const QList<QUrl> &files);
 深色 `accentText`，现已改为禁用前景色与普通描边；无已关联媒体时按钮文案改为
 “暂无可播放媒体”。空章节标题改为“标题待公布”，明确表达这是远端尚未公布，
 不是本地数据丢失。
+
+随后用户要求把媒体库主层级从目录组提升为真正的 Subject → Episode → 媒体文件。
+现已完成：实际开发库的 13 个文件运行时显示为 2 个条目、各自的 EP1，以及 1 个
+待整理目录中的 11 个未关联文件。
 
 ### 3.2 Model 导入语义
 
@@ -224,11 +236,11 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
 ### Presentation / View / Runtime
 
 - `src/presentation/library/library_view_model.hpp/.cpp`：QML 导入、关联、解除、播放、移除、
-  加载、错误和资源组 DTO；
+  加载、错误、Subject/Episode 层级和待整理 DTO；
 - `src/presentation/library/subject_details_view_model.hpp/.cpp`：数据库条目/章节/关联媒体
   详情 DTO、Bangumi 外部身份反查和按本地 `EpisodeId` 播放；
-- `src/view/qml/LibraryPage.qml`：真实模式文件选择、父目录分组、Bangumi 关联 Dialog 与
-  移除确认；
+- `src/view/qml/LibraryPage.qml`：真实模式文件选择、Subject/Episode/媒体文件层级、
+  未关联父目录待整理区、Bangumi 关联 Dialog 与移除确认；
 - `src/view/qml/MediaItemCard.qml`：本地媒体卡片、双击播放与右键操作菜单；
 - `src/view/qml/SubjectDetailPage.qml`：fixture 模式保留静态详情；真实模式只消费
   `SubjectDetailsViewModel`；
@@ -244,8 +256,8 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
 - `tests/unit/model/bangumi/test_bangumi_foundation.cpp`：公开条目详情/章节请求、官方响应
   形状、字段校验、可选 Token 回退和 Client GET；
 - `tests/unit/model/library/test_library_foundation.cpp`：领域与发现快照校验；
-- `tests/unit/presentation/test_library_view_model.cpp`：加载、导入、移除、资源组 DTO、错误
-  关联 DTO 和真实 QML URL 边界；
+- `tests/unit/presentation/test_library_view_model.cpp`：加载、导入、移除、Subject/Episode 排序与
+  待整理分流、关联 DTO、错误和真实 QML URL 边界；
 - `tests/unit/presentation/test_subject_details_view_model.cpp`：数据库详情映射、Bangumi
   目录同步、同步错误和按章节播放；
 - `tests/xmake.lua`：Presentation 测试目前链接 `QtQml`，供 URL 边界测试使用。
@@ -257,7 +269,7 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
 ```text
 xmake run test_library_foundation -> 8/8 passed
 xmake run test_library_store      -> 13/13 passed
-xmake run test_library_view_model -> 6/6 passed
+xmake run test_library_view_model -> 7/7 passed
 xmake run test_subject_details_view_model -> 5/5 passed
 BangumiEpisodes targeted tests    -> 4/4 passed
 BangumiSubjectDetails targeted tests -> 4/4 passed
@@ -286,18 +298,18 @@ Library 相关 Store/ViewModel 测试均通过；其中关联集成测试覆盖�
 描边和文字色，避免平台默认浅色样式泄漏。
 详情页禁用 primary 播放按钮的黑字也已在公共 `AppButton` 修复，并用明确的
 “暂无可播放媒体”替代不可操作的“开始播放”。
+真实库截图验证了 Subject → Episode → 文件层级和待整理区；默认首页在截图后已恢复。
 
 ## 6. 已知边界与下一步
 
-当前完成的是“导入、按目录整理、手动关联/解除、数据库条目详情/章节、调用系统播放器和
-安全移除”。尚未实现：
+当前完成的是“导入、未关联目录整理、手动关联/解除、Subject → Episode → 媒体
+层级、数据库条目详情/章节、调用系统播放器和安全移除”。尚未实现：
 
 1. 文件名解析/自动匹配；
-2. 已关联媒体按 Subject/Episode 重组为真正季度层级；
-3. 递归目录扫描与完整快照的失效语义；
-4. 内置 `PlaybackSession`、nekoav 输出、控制和进度保存；
-5. 最近播放和继续观看；
-6. 把 `main.cpp` 装配抽成 `src/runtime/AppRuntime`。
+2. 递归目录扫描与完整快照的失效语义；
+3. 内置 `PlaybackSession`、nekoav 输出、控制和进度保存；
+4. 最近播放和继续观看；
+5. 把 `main.cpp` 装配抽成 `src/runtime/AppRuntime`。
 
 详情边界需要特别注意：页面始终从 CatalogStore/LibraryStore 读取。每日放送点击只把
 Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`Details` 在 6 小时新鲜期
@@ -306,11 +318,10 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 
 建议下一步顺序：
 
-1. 关联后媒体库主层级按 `Subject` 显示，详情按 `Episode` 展示对应文件；
-2. 用真实 Bangumi 搜索替换 Bangumi 页搜索 fixture，并复用相同的点击落库链路；
-3. 实现文件名 matcher，自动结果必须可确认且不能覆盖手动关联；
-4. 建立 PlaybackSession 并用 nekoav 替换系统播放器过渡入口；
-5. 增加播放进度和最近播放。
+1. 用真实 Bangumi 搜索替换 Bangumi 页搜索 fixture，并复用相同的点击落库链路；
+2. 实现文件名 matcher，自动结果必须可确认且不能覆盖手动关联；
+3. 建立 PlaybackSession 并用 nekoav 替换系统播放器过渡入口；
+4. 增加播放进度和最近播放。
 
 ## 7. 操作注意事项
 
@@ -329,9 +340,9 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 可以直接对新助手说：
 
 > 先完整阅读 `docs/HANDOFF.md`、`docs/arch.md` 和
-> `docs/library/library_design.md`，不要重新猜架构。Windows MKV URL、父目录分组和右键
+> `docs/library/library_design.md`，不要重新猜架构。Windows MKV URL、未关联父目录待整理区和右键
 > 安全移除、Bangumi 章节读取、手动 EpisodeMediaLink 关联/解除和系统播放器过渡入口已经
-> 落地；每日放送点击会把完整 Subject/Episode 落入 Catalog，再由真实详情读取
-> Catalog/Library 数据库，不会显示 fixture。继续做关联后的 Subject/Episode 媒体库层级、
-> 真实搜索页，或开始
+> 落地；已关联媒体库已按 Subject → Episode → 媒体文件显示。每日放送点击会把完整
+> Subject/Episode 落入 Catalog，再由真实详情读取 Catalog/Library 数据库，不会显示 fixture。
+> 继续做真实搜索页、文件名 matcher，或开始
 > PlaybackSession/nekoav。构建一律 `-j4`。

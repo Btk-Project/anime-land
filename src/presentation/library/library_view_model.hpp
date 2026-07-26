@@ -18,7 +18,9 @@ namespace anime_land {
 class LibraryViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList mediaItems READ mediaItems NOTIFY mediaChanged)
-    Q_PROPERTY(QVariantList mediaGroups READ mediaGroups NOTIFY mediaChanged)
+    Q_PROPERTY(QVariantList subjectGroups READ subjectGroups NOTIFY mediaChanged)
+    Q_PROPERTY(QVariantList unassociatedGroups READ unassociatedGroups
+                   NOTIFY mediaChanged)
     Q_PROPERTY(QVariantList associationSubjects READ associationSubjects
                    NOTIFY associationChanged)
     Q_PROPERTY(QVariantList associationEpisodes READ associationEpisodes
@@ -60,7 +62,10 @@ public:
     ~LibraryViewModel() override;
 
     auto mediaItems() const -> QVariantList { return mMediaItems; }
-    auto mediaGroups() const -> QVariantList { return mMediaGroups; }
+    auto subjectGroups() const -> QVariantList { return mSubjectGroups; }
+    auto unassociatedGroups() const -> QVariantList {
+        return mUnassociatedGroups;
+    }
     auto associationSubjects() const -> QVariantList {
         return mAssociationSubjects;
     }
@@ -123,7 +128,8 @@ private:
     ilias::TaskScope mTasks;
     std::vector<BangumiSearchSubject> mSubjectResults;
     QVariantList mMediaItems;
-    QVariantList mMediaGroups;
+    QVariantList mSubjectGroups;
+    QVariantList mUnassociatedGroups;
     QVariantList mAssociationSubjects;
     QVariantList mAssociationEpisodes;
     QString mErrorMessage;

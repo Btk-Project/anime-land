@@ -5,7 +5,14 @@ Rectangle {
     id: root
 
     property var media
+    property var contextAssociation: null
     property bool actionEnabled: true
+    readonly property var detailsAssociation: contextAssociation
+            || (media && media.associationCount > 0
+                ? media.associations[0] : null)
+    readonly property var unlinkAssociation: contextAssociation
+            || (media && media.associationCount === 1
+                ? media.associations[0] : null)
 
     signal removeRequested(var mediaItem)
     signal linkRequested(var mediaItem)
@@ -91,10 +98,8 @@ Rectangle {
         background: Rectangle {
             implicitWidth: 190
             implicitHeight: 8 + 38 * (3
-                            + (root.media
-                               && root.media.associationCount > 0 ? 1 : 0)
-                            + (root.media
-                               && root.media.associationCount === 1 ? 1 : 0))
+                            + (root.detailsAssociation ? 1 : 0)
+                            + (root.unlinkAssociation ? 1 : 0))
             radius: Theme.radiusSmall
             color: Theme.surfaceRaised
             border.width: 1
@@ -148,9 +153,11 @@ Rectangle {
 
         MenuItem {
             id: detailsAction
-            text: root.media && root.media.associationCount > 1
+            text: root.contextAssociation
+                  ? "查看条目详情"
+                  : root.media && root.media.associationCount > 1
                   ? "查看首个关联条目" : "查看条目详情"
-            visible: root.media && root.media.associationCount > 0
+            visible: root.detailsAssociation !== null
             enabled: root.actionEnabled && visible
             implicitWidth: 182
             implicitHeight: visible ? 38 : 0
@@ -168,13 +175,14 @@ Rectangle {
                        ? Theme.surfaceHover : "transparent"
             }
             onTriggered: root.detailsRequested(root.media,
-                                                root.media.associations[0])
+                                                root.detailsAssociation)
         }
 
         MenuItem {
             id: unlinkAction
-            text: "解除当前关联"
-            visible: root.media && root.media.associationCount === 1
+            text: root.contextAssociation
+                  ? "解除该章节关联" : "解除当前关联"
+            visible: root.unlinkAssociation !== null
             enabled: root.actionEnabled && visible
             implicitWidth: 182
             implicitHeight: visible ? 38 : 0
@@ -192,7 +200,7 @@ Rectangle {
                        ? Theme.surfaceHover : "transparent"
             }
             onTriggered: root.unlinkRequested(root.media,
-                                               root.media.associations[0])
+                                               root.unlinkAssociation)
         }
 
         MenuItem {

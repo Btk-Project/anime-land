@@ -4,8 +4,9 @@
 
 Qt Quick 主界面已经开始接入真实 Presentation：无参数启动时，每日放送通过
 `BangumiCalendarViewModel` 请求真实数据；现有 Bangumi CLI 子命令继续使用原来的参数
-入口。媒体库通过 `LibraryViewModel` 读取本地数据库，支持文件选择器显式导入、按父目录
-组织文件、搜索 Bangumi 条目/章节、写入或解除手动关联，以及双击/右键调用系统播放器；
+入口。媒体库通过 `LibraryViewModel` 读取本地数据库，支持文件选择器显式导入、按
+Subject → Episode → 媒体文件组织已关联内容、按父目录收纳未关联文件、搜索 Bangumi
+条目/章节、写入或解除手动关联，以及双击/右键调用系统播放器；
 条目详情通过 `SubjectDetailsViewModel` 读取 Catalog/Library 数据库并按章节打开关联媒体。
 Bangumi 主搜索页、收藏和内置播放器仍使用 fixture。
 
@@ -32,7 +33,7 @@ PlaybackSession。`ANIME_LAND_UI_SMOKE_TEST=1` 会自动启用此模式，保证
 | 页面 | 当前 fixture 行为 | 后续 Presentation 输入 |
 | --- | --- | --- |
 | 首页 | 真实今日放送摘要；其余为 fixture | `BangumiCalendarViewModel`，后续 `HomeViewModel` |
-| 媒体库 | fixture 下保留条目卡片；真实模式支持导入、父目录分组、关联/解除、系统播放和安全移除 | `LibraryViewModel`（已接入） |
+| 媒体库 | fixture 下保留条目卡片；真实模式支持导入、Subject/Episode/文件层级、未关联目录待整理、关联/解除、系统播放和安全移除 | `LibraryViewModel`（已接入） |
 | Bangumi | 真实每日放送；搜索/收藏仍为 fixture | `BangumiCalendarViewModel`，后续 `BangumiViewModel` |
 | 条目详情 | fixture 模式保留静态预览；真实模式显示数据库元数据、章节、媒体关联和播放入口 | `SubjectDetailsViewModel`（已接入） |
 | 播放器 | 视频输出占位、控制栏、章节队列 | `PlaybackViewModel` |
@@ -44,9 +45,11 @@ Bangumi 协议 DTO、文件路径或 provider descriptor。
 
 真实模式的“导入媒体”打开多文件选择器，只提交用户选中的本地 URL。ViewModel 管理
 导入中、错误、成功提示和导入后刷新；当前不递归扫描目录，也不在 QML 中解析文件名。
-同一父目录的文件显示在一个待整理资源组中，但目录组不伪装成季度或 Bangumi 条目。
-组内 `MediaItemCard` 双击直接播放；右键提供“播放”“关联章节”“解除当前关联”和“从
-媒体库移除”。关联 Dialog 搜索真实 Bangumi 动画，选中条目后读取章节，并以本地
+已关联文件使用 `subjectGroups`，展示为 Subject 卡片、Episode 分区和最内层的
+`MediaItemCard`；未关联文件使用 `unassociatedGroups`，仍按父目录收纳在“待整理”区，
+目录组不伪装成季度或 Bangumi 条目。卡片双击直接播放；右键提供“播放”“关联章节”
+“解除该章节关联”和“从媒体库移除”。关联 Dialog 搜索真实 Bangumi 动画，选中条目后
+读取章节，并以本地
 EpisodeId 提交手动关联。确认移除只删除库记录、不删除磁盘原文件；最后一个子项移除后，
 空目录组随重新加载消失。QML 不接收真实文件路径，播放仍以 SourceItemId 调用 Model。
 
@@ -114,6 +117,5 @@ Windows 离屏平台配合软件 Qt Quick backend 时可能无法正确栅格化
 
 1. 用真实 Bangumi 搜索替换 `BangumiPage` 的搜索 fixture；
 2. 接入账户收藏，并为每日放送叠加当前用户的在看状态；
-3. 把已关联媒体库主层级提升为 Subject；
-4. 用 PlaybackSession/nekoav 替换当前系统默认播放器过渡入口和播放器占位区域；
-5. 为公共组件添加 QML fixture 截图与键盘导航测试。
+3. 用 PlaybackSession/nekoav 替换当前系统默认播放器过渡入口和播放器占位区域；
+4. 为公共组件添加 QML fixture 截图与键盘导航测试。
