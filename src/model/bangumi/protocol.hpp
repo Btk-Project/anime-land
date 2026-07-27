@@ -97,8 +97,8 @@ struct OAuthTokenResponse {
  * @post 成功后 value 为强类型协议值，调用方无需再持有或查询 JSON DOM。
  */
 template <typename T>
-auto decode(const QByteArray &data, T &value) -> std::optional<QString> {
-    RapidJsonInputSerializer serializer(data.constData(), static_cast<std::size_t>(data.size()));
+auto decode(const QByteArray &data, T &value, int offset = 0) -> std::optional<QString> {
+    RapidJsonInputSerializer serializer(data.constData() + offset, static_cast<std::size_t>(data.size()));
     if (serializer(value)) {
         return std::nullopt;
     }

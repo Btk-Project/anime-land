@@ -574,6 +574,9 @@ auto BangumiClient::getUserCollections(const BangumiToken &token, QStringView us
     auto parsed = detail::parseBangumiUserCollectionsResponse(data);
     if (!parsed) {
         AL_LOG_WARN("[bangumi.http] response validation failed route=/v0/users/{{user}}/collections");
+#if defined(QT_DEBUG)
+        AL_LOG_DEBUG("[bangumi.http] response validation failed route=/v0/users/{{user}}/collections data={}", data.toStdString());
+#endif
         co_return ilias::Err(std::move(parsed.error()));
     }
     AL_LOG_INFO("[bangumi.http] request completed route=/v0/users/{{user}}/collections returned={} total={}",

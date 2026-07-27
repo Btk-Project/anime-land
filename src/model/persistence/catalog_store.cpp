@@ -834,6 +834,52 @@ auto loadEpisodes(Forms<BackendTag> &forms, SubjectId subject)
     co_return episodes;
 }
 
+/// 分页加载章节，只为当前页补齐外部身份，避免大条目产生 N 次关系查询。
+template <typename BackendTag>
+auto loadEpisodePage(Forms<BackendTag> &forms, SubjectId subject,
+                     int limit, int offset) -> IoTask<EpisodeDetailsPage> {
+    if (limit <= 0 || limit > 50 || offset < 0) {
+        co_return Err(std::make_error_code(std::errc::invalid_argument));
+    }
+
+    using Episode = schema::EpisodeRecord;
+    ILIAS_CO_TRY(
+        auto result,
+        co_await forms.episodes.select()
+            .where(forms.episodes.sql(&Episode::subjectId) == subject.value)
+            .query());
+
+    std::vector<StoredEpisodeRow> rows;
+    ilias_for_await(auto rowResult, result.rangeResult()) {
+        ILIAS_CO_TRY(auto row, rowResult);
+        rows.push_back(std::move(row));
+    }
+    std::ranges::sort(rows, [](const Episode &left, const Episode &right) {
+        return std::tie(left.sortOrder, left.id)
+               < std::tie(right.sortOrder, right.id);
+    });
+
+    const auto begin = std::min<std::size_t>(
+        static_cast<std::size_t>(offset), rows.size());
+    const auto end = std::min<std::size_t>(
+        begin + static_cast<std::size_t>(limit), rows.size());
+    EpisodeDetailsPage page {
+        .items = {},
+        .total = static_cast<int>(rows.size()),
+        .offset = offset,
+    };
+    page.items.reserve(end - begin);
+    for (auto index = begin; index < end; ++index) {
+        EpisodeDetails details = toEpisodeDetails(rows[index]);
+        ILIAS_CO_TRY(
+            details.externalRefs,
+            co_await loadEpisodeExternalRefs(forms.episodeExternalRefs,
+                                             details.id));
+        page.items.push_back(std::move(details));
+    }
+    co_return page;
+}
+
 /// 按后端方言列出当前仍有关联关系的标签 Facet。
 template <typename BackendTag>
 auto loadTags(Forms<BackendTag> &forms, const LocalTagQuery &query)
@@ -1062,6 +1108,19 @@ auto CatalogStore::listEpisodes(SubjectId subject)
     AL_LOG_INFO("[database.catalog] episode list started backend={} subject_id={}",
                 mDatabase.backendName(), subject.value);
     return std::visit([&](auto &forms) { return loadEpisodes(forms, subject); }, mState->forms);
+}
+
+auto CatalogStore::listEpisodesPage(SubjectId subject, int limit, int offset)
+    -> IoTask<EpisodeDetailsPage> {
+    AL_LOG_INFO(
+        "[database.catalog] episode page started backend={} subject_id={} "
+        "limit={} offset={}",
+        mDatabase.backendName(), subject.value, limit, offset);
+    return std::visit(
+        [&](auto &forms) {
+            return loadEpisodePage(forms, subject, limit, offset);
+        },
+        mState->forms);
 }
 
 auto CatalogStore::searchSubjects(const LocalSubjectQuery &query)

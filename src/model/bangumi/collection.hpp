@@ -80,7 +80,7 @@ struct BangumiSubjectTag {
         static constexpr auto value = Object(
             "name",       &BangumiSubjectTag::name,
             "count",      &BangumiSubjectTag::count,
-            "totalCount", make_tags<rename_tag<"total_cont">>(&BangumiSubjectTag::totalCount)
+            "totalCount", make_tags<rename_tag<"total_count">>(&BangumiSubjectTag::totalCount)
         );
     };
     // clang-format on

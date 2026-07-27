@@ -365,8 +365,11 @@ QtObject {
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_TRUE(received.front().isLocalFile());
-    EXPECT_EQ(received.front().toLocalFile(),
-              QStringLiteral("D:/Videos/[LoliHouse] Episode - 01.mkv"));
+    // QUrl intentionally renders a Windows drive as /D:/... on Unix. Compare
+    // the typed URL boundary itself so this remains a cross-platform test.
+    EXPECT_EQ(received.front(),
+              QUrl(QStringLiteral(
+                  "file:///D:/Videos/%5BLoliHouse%5D%20Episode%20-%2001.mkv")));
 }
 
 #define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \

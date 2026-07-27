@@ -34,6 +34,20 @@ Item {
     signal playRequested(var subject)
     signal libraryRequested()
 
+    function loadSubject() {
+        if (uiFixtureMode || !subjectDetailsViewModel)
+            return
+        if (root.subject && root.subject.subjectId > 0)
+            subjectDetailsViewModel.openSubject(root.subject.subjectId)
+        else if (root.subject && root.subject.bangumiId > 0)
+            subjectDetailsViewModel.openBangumiSubject(root.subject.bangumiId)
+        else
+            subjectDetailsViewModel.clear()
+    }
+
+    Component.onCompleted: root.loadSubject()
+    StackView.onActivated: root.loadSubject()
+
     Flickable {
         anchors.fill: parent
         clip: true
@@ -139,8 +153,10 @@ Item {
                     spacing: 24
 
                     Rectangle {
-                        Layout.preferredWidth: 156
-                        Layout.fillHeight: true
+                        Layout.preferredWidth: 164
+                        Layout.preferredHeight: 232
+                        Layout.maximumHeight: 232
+                        Layout.alignment: Qt.AlignVCenter
                         radius: Theme.radius
                         color: root.displaySubject.color || Theme.surfaceRaised
                         clip: true
@@ -149,9 +165,15 @@ Item {
                             id: coverImage
                             anchors.fill: parent
                             source: root.displaySubject.coverUrl || ""
+                            sourceSize: Qt.size(
+                                Math.ceil(width * Screen.devicePixelRatio),
+                                Math.ceil(height * Screen.devicePixelRatio))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
-                            visible: source.toString().length > 0
+                            cache: true
+                            mipmap: true
+                            autoTransform: true
+                            visible: status === Image.Ready
                         }
 
                         AppText {
@@ -281,7 +303,10 @@ Item {
                 title: "章节"
                 detail: uiFixtureMode
                         ? root.episodeModel.length + " 个 fixture 章节"
-                        : root.episodeModel.length + " 个数据库章节 · "
+                        : root.episodeModel.length + " / "
+                          + (subjectDetailsViewModel
+                             ? subjectDetailsViewModel.totalEpisodeCount : 0)
+                          + " 个数据库章节 · "
                           + (subjectDetailsViewModel
                              ? subjectDetailsViewModel.playableEpisodeCount : 0)
                           + " 个可播放"
@@ -315,6 +340,18 @@ Item {
                         }
                     }
                 }
+            }
+
+            AppButton {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: !uiFixtureMode && subjectDetailsViewModel
+                         && subjectDetailsViewModel.hasMoreEpisodes
+                text: subjectDetailsViewModel
+                      && subjectDetailsViewModel.loadingMore
+                      ? "正在加载…" : "再加载 24 章"
+                enabled: subjectDetailsViewModel
+                         && !subjectDetailsViewModel.loadingMore
+                onClicked: subjectDetailsViewModel.loadMoreEpisodes()
             }
 
             Rectangle {

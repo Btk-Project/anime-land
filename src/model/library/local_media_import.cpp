@@ -812,12 +812,15 @@ auto LocalMediaImportService::ensureBangumiSubject(
     co_return *completedSubject;
 }
 
-auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject)
+auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject,
+                                                       int limit,
+                                                       int offset)
     -> ilias::Task<LibraryResult<std::optional<SubjectLibraryDetails>>> {
-    if (mCatalog == nullptr || !isValid(subject)) {
+    if (mCatalog == nullptr || !isValid(subject) || limit <= 0 || limit > 50
+        || offset < 0) {
         co_return ilias::Err(libraryError(
             LibraryErrorCode::InvalidIdentity,
-            QStringLiteral("本地条目 ID 无效或目录服务未配置")));
+            QStringLiteral("本地条目 ID 或章节分页参数无效")));
     }
     auto storedSubject = co_await mCatalog->getSubject(subject);
     if (!storedSubject) {
@@ -826,7 +829,8 @@ auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject)
     if (!*storedSubject) {
         co_return std::optional<SubjectLibraryDetails> {};
     }
-    auto episodes = co_await mCatalog->listEpisodes(subject);
+    auto episodes = co_await mCatalog->listEpisodesPage(subject, limit,
+                                                        offset);
     if (!episodes) {
         co_return ilias::Err(catalogFailure(episodes.error()));
     }
@@ -838,9 +842,11 @@ auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject)
     SubjectLibraryDetails details {
         .subject = std::move(**storedSubject),
         .episodes = {},
+        .totalEpisodeCount = episodes->total,
+        .offset = episodes->offset,
     };
-    details.episodes.reserve(episodes->size());
-    for (auto &episode : *episodes) {
+    details.episodes.reserve(episodes->items.size());
+    for (auto &episode : episodes->items) {
         EpisodeLibraryEntry entry {.episode = std::move(episode), .media = {}};
         auto links =
             co_await mStore.listEpisodeMediaLinks(entry.episode.id);

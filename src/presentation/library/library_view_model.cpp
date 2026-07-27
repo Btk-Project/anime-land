@@ -75,8 +75,8 @@ auto associationLabel(const MediaAssociationSummary &association) -> QString {
 auto associationMap(const MediaAssociationSummary &association)
     -> QVariantMap {
     return {
-        {QStringLiteral("episodeId"), association.episodeId.value},
-        {QStringLiteral("subjectId"), association.subjectId.value},
+        {QStringLiteral("episodeId"), QVariant::fromValue(association.episodeId.value)},
+        {QStringLiteral("subjectId"), QVariant::fromValue(association.subjectId.value)},
         {QStringLiteral("subjectTitle"), association.subjectTitle},
         {QStringLiteral("episodeTitle"), association.episodeTitle},
         {QStringLiteral("episodeNumber"),
@@ -106,9 +106,9 @@ auto mediaEntryMap(const LibraryMediaEntry &entry) -> QVariantMap {
     }
 
     QVariantMap value;
-    value.insert(QStringLiteral("id"), entry.media.item.id.value);
+    value.insert(QStringLiteral("id"), QVariant::fromValue(entry.media.item.id.value));
     value.insert(QStringLiteral("resourceId"),
-                 entry.media.resource.id.value);
+                 QVariant::fromValue(entry.media.resource.id.value));
     value.insert(QStringLiteral("title"), entry.media.item.displayName);
     value.insert(QStringLiteral("resourceTitle"),
                  entry.media.resource.displayName);
@@ -162,7 +162,7 @@ auto subjectMap(const BangumiSearchSubject &subject) -> QVariantMap {
     const QString title = subject.nameCn.isEmpty() ? subject.name
                                                     : subject.nameCn;
     QVariantMap value;
-    value.insert(QStringLiteral("bangumiId"), subject.id);
+    value.insert(QStringLiteral("bangumiId"), QVariant::fromValue(subject.id));
     value.insert(QStringLiteral("title"), title);
     value.insert(QStringLiteral("subtitle"),
                  subject.nameCn.isEmpty() ? QString {} : subject.name);
@@ -176,7 +176,7 @@ auto subjectMap(const BangumiSearchSubject &subject) -> QVariantMap {
 
 auto episodeMap(const AssociationEpisodeOption &episode) -> QVariantMap {
     return QVariantMap {
-        {QStringLiteral("id"), episode.id.value},
+        {QStringLiteral("id"), QVariant::fromValue(episode.id.value)},
         {QStringLiteral("title"), episode.title},
         {QStringLiteral("number"), episode.displayNumber},
         {QStringLiteral("type"), episode.episodeType},
@@ -653,6 +653,9 @@ void LibraryViewModel::applyMedia(
                 subjects.push_back({
                     .subjectId = subjectId,
                     .title = association.subjectTitle,
+                    .episodeIndices = {},
+                    .episodes = {},
+                    .mediaIds = {},
                 });
             }
 

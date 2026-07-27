@@ -194,6 +194,8 @@ TEST(AppSettings, LoadOrCreateWritesEveryDefaultField) {
   EXPECT_NE(contents.find("proxy_url"), std::string::npos);
   EXPECT_NE(contents.find("proxy_username"), std::string::npos);
   EXPECT_NE(contents.find("proxy_password"), std::string::npos);
+  EXPECT_NE(contents.find("appearance_settings"), std::string::npos);
+  EXPECT_NE(contents.find("theme"), std::string::npos);
 
   const auto loaded = settingsGuard.loadOrCreate(path);
   ASSERT_TRUE(loaded);

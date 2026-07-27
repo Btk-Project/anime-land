@@ -32,7 +32,7 @@ Model（Bangumi / Library / Persistence）
 main.cpp 是当前 Composition Root；后续才抽到 src/runtime/。
 ```
 
-真实 QML 当前已有三条主要纵向切片：
+真实 QML 当前已有五条主要纵向切片：
 
 - `BangumiCalendarViewModel`：真实 Bangumi 每日放送；
 - `LibraryViewModel`：真实本地数据库、文件选择导入、Bangumi 搜索/章节读取、手动关联/
@@ -40,8 +40,13 @@ main.cpp 是当前 Composition Root；后续才抽到 src/runtime/。
   层级投影；
 - `SubjectDetailsViewModel`：从 CatalogStore 读取本地条目/章节，并与 LibraryStore 的
   `EpisodeMediaLink`、`SourceItem` 合并成详情 DTO；支持从章节调用系统播放器。
+- `BangumiBrowserViewModel`：公开动画搜索（24 条分页）、系统凭据登录恢复、OAuth 登录/
+  退出和真实用户收藏分页；
+- `ApplicationSettingsViewModel`：持久化跟随系统/深色/浅色主题、Bangumi OAuth 与代理
+  配置；同步更新 Qt 全局 palette，Linux 文件对话框使用受控的 Quick fallback 样式。
 
-首页其余数据、Bangumi 主搜索页/收藏和内置播放器仍主要是 fixture。条目详情在真实模式
+首页的最近加入/继续观看和内置播放器仍主要是 fixture。Bangumi 主搜索页与收藏页在真实
+模式已不再回退 fixture。条目详情在真实模式
 不再读取 fixture：已落入 CatalogStore 的条目显示数据库元数据、章节及关联媒体；尚未
 落库的每日放送条目会先读取 Bangumi 完整 Subject/全部章节并持久化，再从数据库显示。
 全局 fixture 开关：
@@ -300,10 +305,18 @@ Library 相关 Store/ViewModel 测试均通过；其中关联集成测试覆盖�
 “暂无可播放媒体”替代不可操作的“开始播放”。
 真实库截图验证了 Subject → Episode → 文件层级和待整理区；默认首页在截图后已恢复。
 
+随后完成了 Linux 深浅色统一、中文输入法提交边界、真实设置/搜索/账户/收藏接线、上下文
+导航返回和详情章节分页。主题默认读取系统配色，用户可选 `system`/`dark`/`light` 并写入
+`appearance_settings.theme`。详情页每次只从数据库读取并映射 24 章，最多 50 的 Store
+分页接口只为当前页补齐外部身份和媒体关系；QML 通过“再加载 24 章”追加。详情 A → 关联
+媒体库 → 详情 B 使用 StackView 历史，返回激活旧详情时会按该页身份重新加载，避免共享
+ViewModel 显示错条目。
+
 ## 6. 已知边界与下一步
 
 当前完成的是“导入、未关联目录整理、手动关联/解除、Subject → Episode → 媒体
-层级、数据库条目详情/章节、调用系统播放器和安全移除”。尚未实现：
+层级、数据库条目详情/章节、真实 Bangumi 搜索/收藏/账户、可持久化设置、调用系统播放器
+和安全移除”。尚未实现：
 
 1. 文件名解析/自动匹配；
 2. 递归目录扫描与完整快照的失效语义；
@@ -344,5 +357,5 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 > 安全移除、Bangumi 章节读取、手动 EpisodeMediaLink 关联/解除和系统播放器过渡入口已经
 > 落地；已关联媒体库已按 Subject → Episode → 媒体文件显示。每日放送点击会把完整
 > Subject/Episode 落入 Catalog，再由真实详情读取 Catalog/Library 数据库，不会显示 fixture。
-> 继续做真实搜索页、文件名 matcher，或开始
+> 继续做文件名 matcher，或开始
 > PlaybackSession/nekoav。构建一律 `-j4`。

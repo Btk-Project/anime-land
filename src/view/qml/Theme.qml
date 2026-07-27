@@ -3,23 +3,28 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color background: "#111315"
-    readonly property color sidebar: "#151719"
-    readonly property color surface: "#191c1f"
-    readonly property color surfaceRaised: "#202428"
-    readonly property color surfaceHover: "#262a2f"
-    readonly property color border: "#2d3237"
+    property string preference: "system"
+    property bool systemDark: true
+    readonly property bool dark: preference === "dark"
+                                 || (preference === "system" && systemDark)
 
-    readonly property color text: "#eceff1"
-    readonly property color textMuted: "#9aa1a8"
-    readonly property color textFaint: "#6f767d"
+    readonly property color background: dark ? "#111315" : "#f4f6f8"
+    readonly property color sidebar: dark ? "#151719" : "#eef1f4"
+    readonly property color surface: dark ? "#191c1f" : "#ffffff"
+    readonly property color surfaceRaised: dark ? "#202428" : "#edf0f3"
+    readonly property color surfaceHover: dark ? "#262a2f" : "#e3e8ec"
+    readonly property color border: dark ? "#2d3237" : "#d5dbe0"
 
-    readonly property color accent: "#7d8893"
-    readonly property color accentHover: "#919ca7"
-    readonly property color accentText: "#111315"
-    readonly property color success: "#84968a"
-    readonly property color warning: "#a39882"
-    readonly property color danger: "#a77f7f"
+    readonly property color text: dark ? "#eceff1" : "#202428"
+    readonly property color textMuted: dark ? "#9aa1a8" : "#626d76"
+    readonly property color textFaint: dark ? "#6f767d" : "#87919a"
+
+    readonly property color accent: dark ? "#7d8893" : "#657686"
+    readonly property color accentHover: dark ? "#919ca7" : "#526676"
+    readonly property color accentText: dark ? "#111315" : "#ffffff"
+    readonly property color success: dark ? "#84968a" : "#557462"
+    readonly property color warning: dark ? "#a39882" : "#806d43"
+    readonly property color danger: dark ? "#a77f7f" : "#9a4f4f"
 
     readonly property int radiusSmall: 6
     readonly property int radius: 9

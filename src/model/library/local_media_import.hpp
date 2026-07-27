@@ -61,6 +61,8 @@ struct EpisodeLibraryEntry {
 struct SubjectLibraryDetails {
     persistence::SubjectDetails subject;
     std::vector<EpisodeLibraryEntry> episodes;
+    int totalEpisodeCount = 0;
+    int offset = 0;
 };
 
 auto resolveLocalMediaUrl(const MediaEntry &entry) -> LibraryResult<QUrl>;
@@ -115,7 +117,8 @@ public:
         -> ilias::Task<LibraryResult<std::optional<SubjectId>>>;
     auto ensureBangumiSubject(std::int64_t bangumiSubjectId)
         -> ilias::Task<LibraryResult<SubjectId>>;
-    auto getSubjectLibraryDetails(SubjectId subject)
+    auto getSubjectLibraryDetails(SubjectId subject, int limit = 24,
+                                  int offset = 0)
         -> ilias::Task<LibraryResult<std::optional<SubjectLibraryDetails>>>;
     auto playEpisode(EpisodeId episode)
         -> ilias::Task<LibraryResult<void>>;

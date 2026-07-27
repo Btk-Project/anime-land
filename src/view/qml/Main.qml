@@ -25,6 +25,27 @@ ApplicationWindow {
     palette.buttonText: Theme.text
     palette.highlight: Theme.accent
     palette.highlightedText: Theme.accentText
+    palette.alternateBase: Theme.surfaceRaised
+    palette.mid: Theme.border
+    palette.light: Theme.surfaceRaised
+    palette.dark: Theme.background
+    palette.toolTipBase: Theme.surfaceRaised
+    palette.toolTipText: Theme.text
+    palette.placeholderText: Theme.textFaint
+
+    Binding {
+        target: Theme
+        property: "preference"
+        value: !uiFixtureMode && settingsViewModel
+               ? settingsViewModel.themeMode : "system"
+    }
+
+    Binding {
+        target: Theme
+        property: "systemDark"
+        value: !uiFixtureMode && settingsViewModel
+               ? settingsViewModel.systemDark : initialSystemDark
+    }
 
     function showRoot(section) {
         currentSection = section
@@ -41,15 +62,11 @@ ApplicationWindow {
 
     function openSubject(subject) {
         selectedSubject = subject
-        if (!uiFixtureMode && subjectDetailsViewModel) {
-            if (subject && subject.subjectId > 0)
-                subjectDetailsViewModel.openSubject(subject.subjectId)
-            else if (subject && subject.bangumiId > 0)
-                subjectDetailsViewModel.openBangumiSubject(subject.bangumiId)
-            else
-                subjectDetailsViewModel.clear()
-        }
         pageStack.push(detailComponent, {"subject": subject})
+    }
+
+    function openContextLibrary() {
+        pageStack.push(libraryComponent, {"showBackNavigation": true})
     }
 
     function openPlayer(subject) {
@@ -62,6 +79,12 @@ ApplicationWindow {
             pageStack.pop()
         else
             showRoot(currentSection)
+    }
+
+    Shortcut {
+        sequence: "Alt+Left"
+        enabled: pageStack.depth > 1
+        onActivated: root.goBack()
     }
 
     RowLayout {
@@ -145,7 +168,7 @@ ApplicationWindow {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: uiFixtureMode
                                   ? "独立 View 调试模式"
-                                  : "搜索与收藏仍为 Fixture"
+                                  : "真实搜索、收藏与媒体库"
                             color: Theme.textFaint
                             font.pixelSize: 10
                         }
@@ -201,6 +224,7 @@ ApplicationWindow {
         id: libraryComponent
         LibraryPage {
             onOpenSubject: subject => root.openSubject(subject)
+            onBackRequested: root.goBack()
         }
     }
 
@@ -213,7 +237,9 @@ ApplicationWindow {
 
     Component {
         id: settingsComponent
-        SettingsPage {}
+        SettingsPage {
+            onLibraryRequested: root.showRoot(1)
+        }
     }
 
     Component {
@@ -221,7 +247,7 @@ ApplicationWindow {
         SubjectDetailPage {
             onBackRequested: root.goBack()
             onPlayRequested: subject => root.openPlayer(subject)
-            onLibraryRequested: root.showRoot(1)
+            onLibraryRequested: root.openContextLibrary()
         }
     }
 
@@ -236,6 +262,8 @@ ApplicationWindow {
         root.showRoot(0)
         if (!uiFixtureMode)
             calendarViewModel.refresh()
+        if (!uiFixtureMode && bangumiBrowserViewModel)
+            bangumiBrowserViewModel.restoreSession()
     }
 
     Timer {

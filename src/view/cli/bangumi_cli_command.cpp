@@ -176,6 +176,11 @@ auto run(BangumiPresenter &presenter, BangumiView &view,
 }
 
 auto run(BangumiPresenter &presenter, BangumiView &view,
+         const GuiCommand &command) -> ilias::Task<int> {
+    co_return 0;
+}
+
+auto run(BangumiPresenter &presenter, BangumiView &view,
          const SearchCommand &command) -> ilias::Task<int> {
     auto query = searchQuery(command);
     if (!query) {

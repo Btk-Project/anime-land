@@ -4,7 +4,7 @@ target("presentation")
     add_includedirs("$(projectdir)/src")
     add_packages("ilias", "neko-proto-tools")
     add_deps("model")
-    add_frameworks("QtCore", "QtNetwork")
+    add_frameworks("QtCore", "QtGui", "QtNetwork")
     on_load(function (target)
         import("lua.auto", {rootdir = os.projectdir()})
         auto().auto_add_packages(target,

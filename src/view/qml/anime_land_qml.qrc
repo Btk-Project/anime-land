@@ -6,6 +6,7 @@
         <file>FixtureData.qml</file>
         <file>AppText.qml</file>
         <file>AppButton.qml</file>
+        <file>AppTextField.qml</file>
         <file>NavigationItem.qml</file>
         <file>PageHeader.qml</file>
         <file>SectionHeader.qml</file>

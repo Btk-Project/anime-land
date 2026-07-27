@@ -12,6 +12,8 @@
 namespace anime_land {
 namespace {
 
+constexpr int kEpisodePageSize = 24;
+
 constexpr std::array<const char *, 8> kSubjectColors = {
     "#59636b", "#5f6859", "#685d58", "#6b5c65",
     "#5c626d", "#545d63", "#655b60", "#58656a",
@@ -98,8 +100,8 @@ auto bangumiId(const persistence::SubjectDetails &subject) -> qlonglong {
 SubjectDetailsViewModel::SubjectDetailsViewModel(
     LocalMediaImportService &service, QObject *parent)
     : SubjectDetailsViewModel(
-          [&service](SubjectId subject) {
-              return service.getSubjectLibraryDetails(subject);
+          [&service](SubjectId subject, int limit, int offset) {
+              return service.getSubjectLibraryDetails(subject, limit, offset);
           },
           [&service](std::int64_t bangumiSubjectId) {
               return service.ensureBangumiSubject(bangumiSubjectId);
@@ -112,6 +114,29 @@ SubjectDetailsViewModel::SubjectDetailsViewModel(
 SubjectDetailsViewModel::SubjectDetailsViewModel(
     DetailsLoader loader, BangumiResolver resolver, EpisodePlayer player,
     QObject *parent)
+    : SubjectDetailsViewModel(
+          [loader = std::move(loader)](SubjectId subject, int, int)
+              -> ilias::Task<LibraryResult<
+                  std::optional<SubjectLibraryDetails>>> {
+              if (!loader) {
+                  co_return ilias::Err(libraryError(
+                      LibraryErrorCode::PersistenceFailure,
+                      QStringLiteral("条目详情加载器未配置")));
+              }
+              auto result = co_await loader(subject);
+              if (result && *result) {
+                  auto &details = **result;
+                  details.totalEpisodeCount =
+                      static_cast<int>(details.episodes.size());
+                  details.offset = 0;
+              }
+              co_return result;
+          },
+          std::move(resolver), std::move(player), parent) {}
+
+SubjectDetailsViewModel::SubjectDetailsViewModel(
+    PagedDetailsLoader loader, BangumiResolver resolver,
+    EpisodePlayer player, QObject *parent)
     : QObject(parent), mLoader(std::move(loader)),
       mResolver(std::move(resolver)),
       mPlayer(std::move(player)) {}
@@ -129,7 +154,7 @@ void SubjectDetailsViewModel::reportInvalid(QString message) {
 }
 
 void SubjectDetailsViewModel::openSubject(qlonglong subjectId) {
-    if (mLoading || mPlaying || mDestroying) {
+    if (mPlaying || mDestroying) {
         return;
     }
     const SubjectId subject {subjectId};
@@ -138,21 +163,24 @@ void SubjectDetailsViewModel::openSubject(qlonglong subjectId) {
         return;
     }
     mLoading = true;
+    mLoadingMore = false;
     mSubject.clear();
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
+    mCurrentSubject = subject;
     mPlayableEpisodeCount = 0;
+    mTotalEpisodeCount = 0;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     const auto generation = ++mGeneration;
     emit detailsChanged();
     emit stateChanged();
-    mTasks.spawn(load(subject, generation));
+    mTasks.spawn(load(subject, 0, false, generation));
 }
 
 void SubjectDetailsViewModel::openBangumiSubject(
     qlonglong bangumiSubjectId) {
-    if (mLoading || mPlaying || mDestroying) {
+    if (mPlaying || mDestroying) {
         return;
     }
     if (bangumiSubjectId <= 0) {
@@ -160,10 +188,13 @@ void SubjectDetailsViewModel::openBangumiSubject(
         return;
     }
     mLoading = true;
+    mLoadingMore = false;
     mSubject.clear();
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
+    mCurrentSubject.reset();
     mPlayableEpisodeCount = 0;
+    mTotalEpisodeCount = 0;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     const auto generation = ++mGeneration;
@@ -173,7 +204,7 @@ void SubjectDetailsViewModel::openBangumiSubject(
 }
 
 void SubjectDetailsViewModel::playEpisode(qlonglong episodeId) {
-    if (mLoading || mPlaying || mDestroying) {
+    if (mLoading || mLoadingMore || mPlaying || mDestroying) {
         return;
     }
     const EpisodeId episode {episodeId};
@@ -197,36 +228,54 @@ void SubjectDetailsViewModel::playFirstAvailable() {
     playEpisode(mFirstPlayableEpisode->value);
 }
 
+void SubjectDetailsViewModel::loadMoreEpisodes() {
+    if (mLoading || mLoadingMore || mPlaying || mDestroying
+        || !mCurrentSubject || !hasMoreEpisodes()) {
+        return;
+    }
+    mLoadingMore = true;
+    mErrorMessage.clear();
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(load(*mCurrentSubject, static_cast<int>(mEpisodes.size()),
+                      true, generation));
+}
+
 void SubjectDetailsViewModel::clear() {
-    if (mLoading || mPlaying) {
+    if (mLoading || mLoadingMore || mPlaying) {
         return;
     }
     ++mGeneration;
     mSubject.clear();
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
+    mCurrentSubject.reset();
     mPlayableEpisodeCount = 0;
+    mTotalEpisodeCount = 0;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     emit detailsChanged();
     emit stateChanged();
 }
 
-auto SubjectDetailsViewModel::load(SubjectId subject,
+auto SubjectDetailsViewModel::load(SubjectId subject, int offset,
+                                   bool append,
                                    std::uint64_t generation)
     -> ilias::Task<void> {
     if (!mLoader) {
         if (!mDestroying && generation == mGeneration) {
             mLoading = false;
+            mLoadingMore = false;
             reportInvalid(QStringLiteral("条目详情加载器未配置"));
         }
         co_return;
     }
-    auto result = co_await mLoader(subject);
+    auto result = co_await mLoader(subject, kEpisodePageSize, offset);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
     mLoading = false;
+    mLoadingMore = false;
     if (!result) {
         mErrorMessage = result.error().message;
         AL_LOG_WARN("[presentation.subject] load failed code={}",
@@ -239,7 +288,8 @@ auto SubjectDetailsViewModel::load(SubjectId subject,
         emit stateChanged();
         co_return;
     }
-    applyDetails(**result);
+    mCurrentSubject = subject;
+    applyDetails(**result, append);
     emit detailsChanged();
     emit stateChanged();
 }
@@ -269,7 +319,7 @@ auto SubjectDetailsViewModel::resolveAndLoad(
         reportInvalid(QStringLiteral("条目详情加载服务未配置"));
         co_return;
     }
-    auto result = co_await mLoader(*resolved);
+    auto result = co_await mLoader(*resolved, kEpisodePageSize, 0);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
@@ -284,7 +334,8 @@ auto SubjectDetailsViewModel::resolveAndLoad(
         emit stateChanged();
         co_return;
     }
-    applyDetails(**result);
+    mCurrentSubject = *resolved;
+    applyDetails(**result, false);
     emit detailsChanged();
     emit stateChanged();
 }
@@ -315,7 +366,7 @@ auto SubjectDetailsViewModel::play(EpisodeId episode,
 }
 
 void SubjectDetailsViewModel::applyDetails(
-    const SubjectLibraryDetails &details) {
+    const SubjectLibraryDetails &details, bool append) {
     const QString title = preferredTitle(details.subject.summary.titleCn,
                                          details.subject.summary.title);
     const QString subtitle =
@@ -338,8 +389,9 @@ void SubjectDetailsViewModel::applyDetails(
     const auto colorIndex = static_cast<std::size_t>(
         details.subject.summary.id.value
         % static_cast<std::int64_t>(kSubjectColors.size()));
-    mSubject = {
-        {QStringLiteral("subjectId"), details.subject.summary.id.value},
+    if (!append) {
+        mSubject = {
+        {QStringLiteral("subjectId"), QVariant::fromValue(details.subject.summary.id.value)},
         {QStringLiteral("bangumiId"), bangumiId(details.subject)},
         {QStringLiteral("title"), title},
         {QStringLiteral("subtitle"), subtitle},
@@ -352,12 +404,19 @@ void SubjectDetailsViewModel::applyDetails(
              : QString {}},
         {QStringLiteral("color"),
          QString::fromLatin1(kSubjectColors[colorIndex])},
-    };
+        };
+    }
 
-    mEpisodes.clear();
-    mEpisodes.reserve(static_cast<qsizetype>(details.episodes.size()));
-    mFirstPlayableEpisode.reset();
-    mPlayableEpisodeCount = 0;
+    if (!append) {
+        mEpisodes.clear();
+        mFirstPlayableEpisode.reset();
+        mPlayableEpisodeCount = 0;
+    }
+    mEpisodes.reserve(mEpisodes.size()
+                      + static_cast<qsizetype>(details.episodes.size()));
+    mTotalEpisodeCount = details.totalEpisodeCount > 0
+        ? details.totalEpisodeCount
+        : static_cast<int>(details.episodes.size());
     for (const auto &entry : details.episodes) {
         const bool linked = !entry.media.empty();
         if (linked) {
@@ -378,7 +437,7 @@ void SubjectDetailsViewModel::applyDetails(
                          .arg(entry.media.size());
         }
         mEpisodes.push_back(QVariantMap {
-            {QStringLiteral("id"), entry.episode.id.value},
+            {QStringLiteral("id"), QVariant::fromValue(entry.episode.id.value)},
             {QStringLiteral("number"), episodeNumber(entry.episode)},
             {QStringLiteral("title"), episodeTitle(entry.episode)},
             {QStringLiteral("source"), source},

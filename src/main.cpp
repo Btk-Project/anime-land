@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QtLogging>
 #include <QStandardPaths>
 #include <QTimer>
@@ -21,14 +22,17 @@
 #include "common/log.hpp"
 #include "presentation/bangumi/bangumi_presenter.hpp"
 #include "presentation/bangumi/calendar_view_model.hpp"
+#include "presentation/bangumi/browser_view_model.hpp"
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
+#include "presentation/settings_view_model.hpp"
 #include "view/cli/bangumi_cli_command.hpp"
 #include "view/cli/bangumi_cli_options.hpp"
 #include "view/cli/bangumi_cli_view.hpp"
 #include "view/qml/qml_application.hpp"
 
 #include <filesystem>
+#include <clocale>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -166,21 +170,19 @@ auto runCommand(BangumiPresenter &presenter, BangumiView &view,
 
 auto defaultConfigPath() -> QString {
     return QStandardPaths::writableLocation(
-               QStandardPaths::AppConfigLocation)
-           + QStringLiteral("/settings.toml");
+               QStandardPaths::AppConfigLocation) +
+           QStringLiteral("/settings.toml");
 }
 
 auto fixtureUiRequested() -> bool {
-    return qEnvironmentVariableIsSet("ANIME_LAND_UI_FIXTURE")
-           || qEnvironmentVariableIsSet("ANIME_LAND_UI_SMOKE_TEST");
+    return qEnvironmentVariableIsSet("ANIME_LAND_UI_FIXTURE") || qEnvironmentVariableIsSet("ANIME_LAND_UI_SMOKE_TEST");
 }
 
 auto resolveGraphicalDatabaseSettings(SqlSettings settings)
     -> std::optional<SqlSettings> {
     const QString databaseType =
         QString::fromStdString(settings.database_type).toLower();
-    if (databaseType != QStringLiteral("sqlite")
-        && databaseType != QStringLiteral("sqlcipher")) {
+    if (databaseType != QStringLiteral("sqlite") && databaseType != QStringLiteral("sqlcipher")) {
         return settings;
     }
 
@@ -205,7 +207,7 @@ auto runGraphicalApplication(QGuiApplication &application) -> int {
     if (fixtureMode) {
         AL_LOG_INFO("[app.qml] starting isolated fixture mode");
         return qml::runApplication(application, nullptr, nullptr, nullptr,
-                                   true);
+                                   nullptr, nullptr, true);
     }
 
     GlobalAppSettingGuard globalSettings;
@@ -227,10 +229,21 @@ auto runGraphicalApplication(QGuiApplication &application) -> int {
     }
 
     TokenStoreOptions storeOptions;
-    storeOptions.kind = TokenStoreKind::Memory;
+    storeOptions.kind = TokenStoreKind::System;
     auto store = TokenStore::create(std::move(storeOptions));
+    bool persistentCredentials = true;
     if (!store) {
-        AL_LOG_ERROR("[app.qml] memory token store initialization failed");
+        AL_LOG_WARN(
+            "[app.qml] system credential store unavailable; using "
+            "non-persistent session code={}",
+            bangumiErrorCodeName(store.error().code));
+        TokenStoreOptions fallbackOptions;
+        fallbackOptions.kind = TokenStoreKind::Memory;
+        store = TokenStore::create(std::move(fallbackOptions));
+        persistentCredentials = false;
+    }
+    if (!store) {
+        AL_LOG_ERROR("[app.qml] token store initialization failed");
         return 2;
     }
 
@@ -263,20 +276,28 @@ auto runGraphicalApplication(QGuiApplication &application) -> int {
         return 2;
     }
 
-    BangumiModule module(std::move(bangumiSettings), std::move(*store));
+    BangumiModuleOptions bangumiOptions;
+    bangumiOptions.features.push_back(bangumiUserCollectionsFeature());
+    BangumiModule module(std::move(bangumiSettings), std::move(*store),
+                         std::move(bangumiOptions));
     int exitCode = 0;
     {
         auto catalogStore = std::move(*catalogStoreResult);
         auto libraryStore = std::move(*libraryStoreResult);
         LocalMediaImportService importService(libraryStore, catalogStore,
-                                               module);
+                                              module);
         LibraryViewModel libraryViewModel(importService);
         SubjectDetailsViewModel subjectDetailsViewModel(importService);
         BangumiCalendarViewModel calendarViewModel(module);
+        BangumiBrowserViewModel bangumiBrowserViewModel(module);
+        ApplicationSettingsViewModel settingsViewModel(
+            globalSettings, QFileInfo(configPath).filesystemFilePath(),
+            &module, persistentCredentials);
         AL_LOG_INFO("[app.qml] starting live model mode");
-        exitCode = qml::runApplication(application, &calendarViewModel,
-                                       &libraryViewModel,
-                                       &subjectDetailsViewModel, false);
+        exitCode = qml::runApplication(
+            application, &calendarViewModel, &bangumiBrowserViewModel,
+            &libraryViewModel, &subjectDetailsViewModel,
+            &settingsViewModel, false);
     }
     auto closed = database.close().wait();
     if (!closed) {
@@ -292,33 +313,22 @@ auto runGraphicalApplication(QGuiApplication &application) -> int {
 auto main(int argc, char **argv) -> int {
     using namespace anime_land;
 
+    // Keep the process locale aligned with the desktop input method. In
+    // particular, a C/POSIX LC_CTYPE prevents several Linux IM modules from
+    // committing non-ASCII preedit text correctly.
+    std::setlocale(LC_CTYPE, "");
+    QLocale::setDefault(QLocale::system());
+
 #if defined(_WIN32)
     ::SetConsoleCP(65001);
     ::SetConsoleOutputCP(65001);
     std::setlocale(LC_ALL, ".utf-8");
 #endif
 
-    if (argc == 1) {
-#ifndef ANIME_LAND_USE_SPDLOG
-        if (!qEnvironmentVariableIsSet("QT_MESSAGE_PATTERN")) {
-            qSetMessagePattern(QStringLiteral(
-                "[%{time yyyy-MM-dd hh:mm:ss.zzz}] [%{type}] "
-                "[%{file}:%{line}] %{message}"));
-        }
-#endif
-        QGuiApplication application(argc, argv);
-        QCoreApplication::setOrganizationName(QStringLiteral("Btk-Project"));
-        QCoreApplication::setApplicationName(QStringLiteral("anime-land"));
-        QCoreApplication::setApplicationVersion(
-            QStringLiteral(ANIME_LAND_VERSION_STRING));
-        AL_LOG_INFO("[app] starting QML shell version={}",
-                    ANIME_LAND_VERSION_STRING);
-        const int exitCode = runGraphicalApplication(application);
-        AL_LOG_INFO("[app] stopped QML shell exit_code={}", exitCode);
-        return exitCode;
-    }
-
     auto parsed = parseCommand(argc, argv);
+    if (argc == 1) {
+        parsed.command = std::optional{cli::GuiCommand {}};
+    }
     if (!parsed.command) {
         return parsed.exitCode;
     }
@@ -345,6 +355,23 @@ auto main(int argc, char **argv) -> int {
         auto guiApplication = std::make_unique<QGuiApplication>(argc, argv);
         guiApplication->setQuitOnLastWindowClosed(false);
         application = std::move(guiApplication);
+    }
+    else if (std::holds_alternative<cli::GuiCommand>(command)) {
+#if defined(Q_OS_LINUX)
+        // The Quick fallback dialog follows our dynamic palette, while native
+        // portal/theme dialogs can independently mix light and dark controls.
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+#endif
+        QGuiApplication application(argc, argv);
+        QCoreApplication::setOrganizationName(QStringLiteral("Btk-Project"));
+        QCoreApplication::setApplicationName(QStringLiteral("anime-land"));
+        QCoreApplication::setApplicationVersion(
+            QStringLiteral(ANIME_LAND_VERSION_STRING));
+        AL_LOG_INFO("[app] starting QML shell version={}",
+                    ANIME_LAND_VERSION_STRING);
+        const int exitCode = runGraphicalApplication(application);
+        AL_LOG_INFO("[app] stopped QML shell exit_code={}", exitCode);
+        return exitCode;
     }
     else {
         application = std::make_unique<QCoreApplication>(argc, argv);

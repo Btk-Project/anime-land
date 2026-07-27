@@ -126,6 +126,12 @@ struct EpisodeDetails {
     QDateTime updatedAt;
 };
 
+struct EpisodeDetailsPage {
+    std::vector<EpisodeDetails> items;
+    int total = 0;
+    int offset = 0;
+};
+
 /// 标签列表项以及当前关联的不同条目数。
 struct TagFacet {
     QString name;
@@ -208,6 +214,10 @@ public:
 
     /// 按稳定顺序列出条目的全部章节。
     auto listEpisodes(SubjectId subject) -> ilias::IoTask<std::vector<EpisodeDetails>>;
+
+    /// 按稳定顺序分页列出章节；每页最多 50 条。
+    auto listEpisodesPage(SubjectId subject, int limit, int offset)
+        -> ilias::IoTask<EpisodeDetailsPage>;
 
     /**
      * @brief 搜索已经持久化的条目。

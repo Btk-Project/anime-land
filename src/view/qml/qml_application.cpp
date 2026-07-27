@@ -1,8 +1,10 @@
 #include "view/qml/qml_application.hpp"
 
 #include "presentation/bangumi/calendar_view_model.hpp"
+#include "presentation/bangumi/browser_view_model.hpp"
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
+#include "presentation/settings_view_model.hpp"
 
 #include <QCoreApplication>
 #include <QFont>
@@ -11,6 +13,7 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QPalette>
 #include <QTimer>
 #include <QUrl>
 
@@ -24,8 +27,10 @@ namespace anime_land::qml {
 
 auto runApplication(QGuiApplication &application,
                     BangumiCalendarViewModel *calendarViewModel,
+                    BangumiBrowserViewModel *bangumiBrowserViewModel,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
+                    ApplicationSettingsViewModel *settingsViewModel,
                     bool fixtureMode) -> int {
     initializeAnimeLandQmlResources();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
@@ -50,12 +55,20 @@ auto runApplication(QGuiApplication &application,
     engine.rootContext()->setContextProperty(QStringLiteral("uiFixtureMode"),
                                              fixtureMode);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("initialSystemDark"),
+        application.palette().color(QPalette::Window).lightness() < 128);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("calendarViewModel"), calendarViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("bangumiBrowserViewModel"),
+        bangumiBrowserViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("libraryViewModel"), libraryViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("subjectDetailsViewModel"),
         subjectDetailsViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("settingsViewModel"), settingsViewModel);
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AnimeLand/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         return 3;

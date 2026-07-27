@@ -7,8 +7,10 @@ Item {
     id: root
 
     signal openSubject(var subject)
+    signal backRequested()
 
     property string activeFilter: "全部"
+    property bool showBackNavigation: false
     property string fixtureNotice: ""
     property var pendingRemoval: null
     property var pendingAssociation: null
@@ -136,6 +138,16 @@ Item {
         associationSearch.forceActiveFocus()
     }
 
+    function submitAssociationSearch() {
+        if (root.actionsBusy())
+            return
+        Qt.inputMethod.commit()
+        Qt.callLater(function() {
+            libraryViewModel.searchAssociationSubjects(
+                associationSearch.text)
+        })
+    }
+
     FileDialog {
         id: importDialog
         title: "选择要导入的媒体文件"
@@ -253,26 +265,14 @@ Item {
                 Layout.fillWidth: true
                 spacing: 10
 
-                TextField {
+                AppTextField {
                     id: associationSearch
                     Layout.fillWidth: true
                     height: 40
                     placeholderText: "搜索动画名称"
-                    color: Theme.text
-                    placeholderTextColor: Theme.textFaint
-                    selectionColor: Theme.accent
-                    selectedTextColor: Theme.accentText
-                    leftPadding: 13
-                    background: Rectangle {
-                        radius: Theme.radiusSmall
-                        color: Theme.surface
-                        border.width: 1
-                        border.color: associationSearch.activeFocus
-                                      ? Theme.accent : Theme.border
-                    }
                     onAccepted: {
-                        if (!root.actionsBusy())
-                            libraryViewModel.searchAssociationSubjects(text)
+                        if (!inputMethodComposing)
+                            root.submitAssociationSearch()
                     }
                 }
 
@@ -281,8 +281,8 @@ Item {
                           ? "正在读取…" : "搜索"
                     primary: true
                     enabled: !root.actionsBusy()
-                    onClicked: libraryViewModel.searchAssociationSubjects(
-                                   associationSearch.text)
+                    onPressed: Qt.inputMethod.commit()
+                    onClicked: root.submitAssociationSearch()
                 }
             }
 
@@ -515,6 +515,7 @@ Item {
 
             PageHeader {
                 width: parent.width
+                visible: !root.showBackNavigation
                 title: "媒体库"
                 subtitle: uiFixtureMode
                           ? "浏览本地条目、观看进度和媒体关联状态。"
@@ -522,28 +523,33 @@ Item {
             }
 
             Row {
+                visible: root.showBackNavigation
+                height: visible ? 48 : 0
+                spacing: 12
+
+                AppButton {
+                    text: "返回"
+                    quiet: true
+                    onClicked: root.backRequested()
+                }
+
+                AppText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "选择媒体并关联章节"
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.bodySize
+                }
+            }
+
+            Row {
                 width: parent.width
                 spacing: 10
 
-                TextField {
+                AppTextField {
                     id: searchField
                     width: Math.min(300, parent.width - 390)
                     height: 40
                     placeholderText: "搜索本地媒体库"
-                    color: Theme.text
-                    placeholderTextColor: Theme.textFaint
-                    selectionColor: Theme.accent
-                    selectedTextColor: Theme.accentText
-                    font.pixelSize: Theme.bodySize
-                    leftPadding: 13
-
-                    background: Rectangle {
-                        radius: Theme.radiusSmall
-                        color: Theme.surface
-                        border.width: 1
-                        border.color: searchField.activeFocus
-                                      ? Theme.accent : Theme.border
-                    }
                 }
 
                 Repeater {

@@ -12,9 +12,9 @@ using namespace NEKO_NAMESPACE;
 using namespace argparser;
 
 struct ConfigFileOptions {
-  std::optional<std::string> config;
+    std::optional<std::string> config;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "config",
@@ -23,16 +23,16 @@ struct ConfigFileOptions {
                   arg_help<"application settings TOML file">>(&ConfigFileOptions::config)
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct CommonCommandOptions {
-  std::string tokenStore = "system";
-  std::optional<std::string> tokenFile;
-  std::optional<std::string> proxy;
-  std::optional<std::string> logLevel;
+    std::string tokenStore = "system";
+    std::optional<std::string> tokenFile;
+    std::optional<std::string> proxy;
+    std::optional<std::string> logLevel;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "tokenStore",
@@ -55,56 +55,56 @@ struct CommonCommandOptions {
                   arg_help<"set the application log level">>(&CommonCommandOptions::logLevel)
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct LoginCommand {
-  CommonCommandOptions common;
-  ConfigFileOptions settings;
+    CommonCommandOptions common;
+    ConfigFileOptions settings;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "common",   &LoginCommand::common,
         "settings", &LoginCommand::settings
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct StatusCommand {
-  CommonCommandOptions common;
+    CommonCommandOptions common;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "common", &StatusCommand::common
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct LogoutCommand {
-  CommonCommandOptions common;
+    CommonCommandOptions common;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "common", &LogoutCommand::common
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct CollectionsCommand {
-  CommonCommandOptions common;
-  ConfigFileOptions settings;
-  std::string subjectType = "all";
-  std::string collectionType = "all";
-  int limit = 30;
-  int offset = 0;
+    CommonCommandOptions common;
+    ConfigFileOptions settings;
+    std::string subjectType = "all";
+    std::string collectionType = "all";
+    int limit = 30;
+    int offset = 0;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "common",         &CollectionsCommand::common,
@@ -130,21 +130,21 @@ struct CollectionsCommand {
                   arg_help<"page offset">>(&CollectionsCommand::offset)
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 struct SearchCommand {
-  CommonCommandOptions common;
-  ConfigFileOptions settings;
-  std::string keyword;
-  std::string subjectType = "all";
-  std::string sort = "match";
-  std::vector<std::string> metaTags;
-  std::vector<std::string> tags;
-  int limit = 30;
-  int offset = 0;
+    CommonCommandOptions common;
+    ConfigFileOptions settings;
+    std::string keyword;
+    std::string subjectType = "all";
+    std::string sort = "match";
+    std::vector<std::string> metaTags;
+    std::vector<std::string> tags;
+    int limit = 30;
+    int offset = 0;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "common",      &SearchCommand::common,
@@ -183,30 +183,37 @@ struct SearchCommand {
                   arg_help<"page offset">>(&SearchCommand::offset)
     );
   };
-  // clang-format on
+    // clang-format on
+};
+
+struct GuiCommand {
+    CommonCommandOptions common;
+    ConfigFileOptions settings;
 };
 
 struct AnimeLandCommands {
-  LoginCommand login;
-  StatusCommand status;
-  LogoutCommand logout;
-  CollectionsCommand collections;
-  SearchCommand search;
+    LoginCommand login;
+    StatusCommand status;
+    LogoutCommand logout;
+    CollectionsCommand collections;
+    SearchCommand search;
+    GuiCommand gui;
 
-  // clang-format off
+    // clang-format off
   struct Neko {
     constexpr static auto value = Object(
         "login",       make_tags<arg_help<"log in to Bangumi through the system browser">, ArgTags{.command = true}>(&AnimeLandCommands::login),
         "status",      make_tags<arg_help<"verify the selected credential store">, ArgTags{.command = true}>(&AnimeLandCommands::status),
         "logout",      make_tags<arg_help<"clear the selected credential store">, ArgTags{.command = true}>(&AnimeLandCommands::logout),
         "collections", make_tags<arg_help<"get one page of the current user's Bangumi collections as JSON">, ArgTags{.command = true}>(&AnimeLandCommands::collections),
-        "search",      make_tags<arg_help<"search public Bangumi subjects; login is optional">, ArgTags{.command = true}>(&AnimeLandCommands::search)
+        "search",      make_tags<arg_help<"search public Bangumi subjects; login is optional">, ArgTags{.command = true}>(&AnimeLandCommands::search),
+        "gui",         make_tags<arg_help<"start the GUI">, ArgTags{.command = true}>(&AnimeLandCommands::gui)
     );
   };
-  // clang-format on
+    // clang-format on
 };
 
 using Command = std::variant<LoginCommand, StatusCommand, LogoutCommand,
-                             CollectionsCommand, SearchCommand>;
+                             CollectionsCommand, SearchCommand, GuiCommand>;
 
 } // namespace anime_land::cli

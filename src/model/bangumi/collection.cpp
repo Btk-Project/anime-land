@@ -83,7 +83,11 @@ auto buildBangumiUserCollectionsUrl(const BangumiSettings &settings, QStringView
  */
 auto parseBangumiUserCollectionsResponse(const QByteArray &data) -> BangumiResult<BangumiUserCollectionPage> {
     BangumiUserCollectionPage page;
-    if (auto error = bangumi_protocol::decode(data, page)) {
+    int offset = 0;
+    if (data.startsWith("data=")) {
+        offset = 5;
+    }
+    if (auto error = bangumi_protocol::decode(data, page, offset)) {
         auto message = QStringLiteral("用户收藏响应不是有效 JSON：%1").arg(*error);
         return invalidCollectionResponse(message);
     }

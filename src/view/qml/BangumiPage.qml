@@ -10,6 +10,24 @@ Item {
     property int fixtureSelectedWeekday: FixtureData.currentWeekdayId()
     property bool fixtureCollectionOnly: false
 
+    function submitSearch() {
+        if (uiFixtureMode)
+            return
+        Qt.inputMethod.commit()
+        Qt.callLater(function() {
+            if (bangumiBrowserViewModel)
+                bangumiBrowserViewModel.search(searchField.text)
+        })
+    }
+
+    function selectTab(tab) {
+        currentTab = tab
+        if (!uiFixtureMode && tab === 2 && bangumiBrowserViewModel
+                && bangumiBrowserViewModel.loggedIn
+                && bangumiBrowserViewModel.collectionResults.length === 0)
+            bangumiBrowserViewModel.refreshCollections()
+    }
+
     readonly property var calendarDays: uiFixtureMode
         ? FixtureData.calendarDays : calendarViewModel.days
     readonly property int selectedWeekday: uiFixtureMode
@@ -37,9 +55,15 @@ Item {
             })
         }
 
-        const base = currentTab === 1
-                ? FixtureData.bangumiSubjects
-                : FixtureData.subjects.slice(0, 4)
+        if (!uiFixtureMode) {
+            if (!bangumiBrowserViewModel)
+                return []
+            return currentTab === 1
+                    ? bangumiBrowserViewModel.searchResults
+                    : bangumiBrowserViewModel.collectionResults
+        }
+        const base = currentTab === 1 ? FixtureData.bangumiSubjects
+                                      : FixtureData.subjects.slice(0, 4)
         const query = searchField.text.trim().toLowerCase()
         if (query.length === 0)
             return base
@@ -75,7 +99,7 @@ Item {
                 title: "Bangumi"
                 subtitle: uiFixtureMode
                     ? "使用 fixture 调试每日放送、搜索与收藏界面。"
-                    : "每日放送已连接真实数据；搜索与收藏仍使用 fixture。"
+                    : "每日放送、公开搜索、账号与收藏均使用真实 Bangumi 数据。"
             }
 
             Row {
@@ -84,19 +108,19 @@ Item {
                 AppButton {
                     text: "每日放送"
                     primary: root.currentTab === 0
-                    onClicked: root.currentTab = 0
+                    onClicked: root.selectTab(0)
                 }
 
                 AppButton {
                     text: "搜索"
                     primary: root.currentTab === 1
-                    onClicked: root.currentTab = 1
+                    onClicked: root.selectTab(1)
                 }
 
                 AppButton {
                     text: "我的收藏"
                     primary: root.currentTab === 2
-                    onClicked: root.currentTab = 2
+                    onClicked: root.selectTab(2)
                 }
 
                 Rectangle {
@@ -112,8 +136,12 @@ Item {
                         if (root.currentTab === 0)
                             return uiFixtureMode ? "Fixture 时间表" : "真实时间表"
                         if (root.currentTab === 1)
-                            return "Fixture 搜索"
-                        return "Fixture 账户"
+                            return uiFixtureMode ? "Fixture 搜索" : "公开搜索"
+                        if (uiFixtureMode)
+                            return "Fixture 账户"
+                        return bangumiBrowserViewModel
+                               ? bangumiBrowserViewModel.accountStatus
+                               : "账户服务未初始化"
                     }
                     color: Theme.textMuted
                     font.pixelSize: Theme.captionSize
@@ -153,27 +181,65 @@ Item {
                 }
             }
 
-            TextField {
-                id: searchField
-                visible: root.currentTab !== 0
-                width: Math.min(520, parent.width)
+            Row {
+                visible: root.currentTab === 1
                 height: visible ? 40 : 0
-                placeholderText: root.currentTab === 1
-                                 ? "搜索 Bangumi 动画条目"
-                                 : "筛选我的收藏"
-                color: Theme.text
-                placeholderTextColor: Theme.textFaint
-                selectionColor: Theme.accent
-                selectedTextColor: Theme.accentText
-                font.pixelSize: Theme.bodySize
-                leftPadding: 13
+                spacing: 10
 
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: Theme.surface
-                    border.width: 1
-                    border.color: searchField.activeFocus
-                                  ? Theme.accent : Theme.border
+                AppTextField {
+                    id: searchField
+                    width: Math.min(520, content.width - 110)
+                    height: 40
+                    placeholderText: "搜索 Bangumi 动画条目"
+                    onAccepted: {
+                        if (!inputMethodComposing)
+                            root.submitSearch()
+                    }
+                }
+
+                AppButton {
+                    visible: !uiFixtureMode
+                    text: bangumiBrowserViewModel
+                          && bangumiBrowserViewModel.searchLoading
+                          ? "搜索中…" : "搜索"
+                    primary: true
+                    enabled: bangumiBrowserViewModel
+                             && !bangumiBrowserViewModel.searchLoading
+                    onPressed: Qt.inputMethod.commit()
+                    onClicked: root.submitSearch()
+                }
+            }
+
+            Row {
+                visible: root.currentTab === 2 && !uiFixtureMode
+                height: visible ? 40 : 0
+                spacing: 10
+
+                AppButton {
+                    text: bangumiBrowserViewModel
+                          && bangumiBrowserViewModel.loggedIn
+                          ? (bangumiBrowserViewModel.collectionsLoading
+                             ? "读取中…" : "刷新收藏")
+                          : "登录 Bangumi"
+                    primary: true
+                    enabled: bangumiBrowserViewModel
+                             && !bangumiBrowserViewModel.accountBusy
+                             && !bangumiBrowserViewModel.collectionsLoading
+                    onClicked: {
+                        if (bangumiBrowserViewModel.loggedIn)
+                            bangumiBrowserViewModel.refreshCollections()
+                        else
+                            bangumiBrowserViewModel.login()
+                    }
+                }
+
+                AppButton {
+                    visible: bangumiBrowserViewModel
+                             && bangumiBrowserViewModel.loggedIn
+                    text: "退出登录"
+                    enabled: bangumiBrowserViewModel
+                             && !bangumiBrowserViewModel.accountBusy
+                    onClicked: bangumiBrowserViewModel.logout()
                 }
             }
 
@@ -187,6 +253,35 @@ Item {
                     : root.calendarError
                 color: root.calendarError.length > 0
                        ? Theme.danger : Theme.textMuted
+                font.pixelSize: Theme.bodySize
+                wrapMode: Text.Wrap
+            }
+
+            AppText {
+                visible: !uiFixtureMode && root.currentTab === 1
+                         && bangumiBrowserViewModel
+                         && (bangumiBrowserViewModel.searchLoading
+                             || bangumiBrowserViewModel.searchError.length > 0)
+                width: parent.width
+                text: bangumiBrowserViewModel
+                      ? (bangumiBrowserViewModel.searchLoading
+                         ? "正在搜索 Bangumi……"
+                         : bangumiBrowserViewModel.searchError) : ""
+                color: bangumiBrowserViewModel
+                       && bangumiBrowserViewModel.searchError.length > 0
+                       ? Theme.danger : Theme.textMuted
+                font.pixelSize: Theme.bodySize
+                wrapMode: Text.Wrap
+            }
+
+            AppText {
+                visible: !uiFixtureMode && root.currentTab === 2
+                         && bangumiBrowserViewModel
+                         && bangumiBrowserViewModel.collectionsError.length > 0
+                width: parent.width
+                text: bangumiBrowserViewModel
+                      ? bangumiBrowserViewModel.collectionsError : ""
+                color: Theme.danger
                 font.pixelSize: Theme.bodySize
                 wrapMode: Text.Wrap
             }
@@ -208,6 +303,15 @@ Item {
                     if (root.currentTab === 0
                             && root.calendarError.length > 0)
                         return "加载失败"
+                    if (!uiFixtureMode && root.currentTab === 1
+                            && bangumiBrowserViewModel)
+                        return root.visibleSubjects.length + " / "
+                               + bangumiBrowserViewModel.searchTotal + " 个条目"
+                    if (!uiFixtureMode && root.currentTab === 2
+                            && bangumiBrowserViewModel)
+                        return root.visibleSubjects.length + " / "
+                               + bangumiBrowserViewModel.collectionTotal
+                               + " 个收藏"
                     return root.visibleSubjects.length + " 个条目"
                 }
             }
@@ -228,13 +332,48 @@ Item {
                 }
             }
 
+            AppButton {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: !uiFixtureMode && bangumiBrowserViewModel
+                         && ((root.currentTab === 1
+                              && bangumiBrowserViewModel.hasMoreSearch)
+                             || (root.currentTab === 2
+                                 && bangumiBrowserViewModel.hasMoreCollections))
+                text: bangumiBrowserViewModel
+                      && ((root.currentTab === 1
+                           && bangumiBrowserViewModel.searchLoading)
+                          || (root.currentTab === 2
+                              && bangumiBrowserViewModel.collectionsLoading))
+                      ? "正在加载…" : "加载更多"
+                enabled: bangumiBrowserViewModel
+                         && (root.currentTab === 1
+                             ? !bangumiBrowserViewModel.searchLoading
+                             : !bangumiBrowserViewModel.collectionsLoading)
+                onClicked: {
+                    if (root.currentTab === 1)
+                        bangumiBrowserViewModel.loadMoreSearch()
+                    else
+                        bangumiBrowserViewModel.loadMoreCollections()
+                }
+            }
+
             AppText {
                 visible: !root.calendarLoading
                          && root.calendarError.length === 0
                          && root.visibleSubjects.length === 0
+                         && (uiFixtureMode || !bangumiBrowserViewModel
+                             || (root.currentTab !== 1
+                                 || !bangumiBrowserViewModel.searchLoading)
+                             && (root.currentTab !== 2
+                                 || !bangumiBrowserViewModel.collectionsLoading))
                 width: parent.width
                 text: root.currentTab === 0 && root.fixtureCollectionOnly
-                      ? "这一天没有正在观看的条目。" : "没有匹配的条目。"
+                      ? "这一天没有正在观看的条目。"
+                      : root.currentTab === 1
+                        ? "输入动画名称后开始搜索。"
+                        : (!uiFixtureMode && bangumiBrowserViewModel
+                           && !bangumiBrowserViewModel.loggedIn
+                           ? "登录后可读取真实收藏。" : "没有匹配的条目。")
                 color: Theme.textMuted
                 font.pixelSize: Theme.bodySize
             }

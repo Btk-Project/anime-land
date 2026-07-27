@@ -104,15 +104,30 @@ struct BangumiSettings {
   // clang-format on
 };
 
+struct AppearanceSettings {
+  // "system" follows the desktop color scheme; the other values are explicit
+  // user overrides. Keep this as a string so older settings files can be
+  // migrated without coupling persistence to a Qt enum value.
+  QString theme = QStringLiteral("system");
+
+  struct Neko {
+    constexpr static auto value = Object(
+        "theme", make_tags<ParserTag{.skippable = true}>(
+                     &AppearanceSettings::theme));
+  };
+};
+
 struct AppSettings {
   SqlSettings sql_settings;
   BangumiSettings bangumi_settings;
+  AppearanceSettings appearance_settings;
 
   // clang-format off
   struct Neko {
     constexpr static auto value = Object(
-        "sql_settings",     &AppSettings::sql_settings,
-        "bangumi_settings", make_tags<ParserTag{.skippable = true}>(&AppSettings::bangumi_settings)
+        "sql_settings",        &AppSettings::sql_settings,
+        "bangumi_settings",    make_tags<ParserTag{.skippable = true}>(&AppSettings::bangumi_settings),
+        "appearance_settings", make_tags<ParserTag{.skippable = true}>(&AppSettings::appearance_settings)
     );
   };
   // clang-format on

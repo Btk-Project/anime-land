@@ -8,6 +8,7 @@
 
 #include "presentation/library/subject_details_view_model.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -81,7 +82,8 @@ auto sampleDetails() -> SubjectLibraryDetails {
 void processUntilSettled(SubjectDetailsViewModel &viewModel) {
     QElapsedTimer timer;
     timer.start();
-    while ((viewModel.loading() || viewModel.playing())
+    while ((viewModel.loading() || viewModel.loadingMore()
+            || viewModel.playing())
            && timer.elapsed() < 1000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
     }
@@ -152,7 +154,7 @@ TEST(SubjectDetailsViewModel, ResolvesBangumiIdentityBeforeDatabaseLoad) {
 
 TEST(SubjectDetailsViewModel, ReportsRemoteCatalogSyncFailure) {
     SubjectDetailsViewModel viewModel(
-        {}, [](std::int64_t)
+        SubjectDetailsViewModel::DetailsLoader {}, [](std::int64_t)
                 -> ilias::Task<LibraryResult<SubjectId>> {
             co_return ilias::Err(libraryError(
                 LibraryErrorCode::RemoteLookupFailure,
@@ -210,6 +212,50 @@ TEST(SubjectDetailsViewModel, PlaysFirstLinkedEpisodeByLocalIdentity) {
     EXPECT_EQ(playedEpisode, EpisodeId {31});
     EXPECT_EQ(viewModel.noticeMessage(),
               QStringLiteral("已交给系统默认播放器打开"));
+}
+
+TEST(SubjectDetailsViewModel, LoadsLargeEpisodeListsInPagesOfTwentyFour) {
+    std::vector<int> offsets;
+    SubjectDetailsViewModel viewModel(
+        [&offsets](SubjectId, int limit, int offset)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            EXPECT_EQ(limit, 24);
+            offsets.push_back(offset);
+            auto details = sampleDetails();
+            details.episodes.clear();
+            details.totalEpisodeCount = 50;
+            details.offset = offset;
+            const int count = std::min(limit, 50 - offset);
+            for (int index = 0; index < count; ++index) {
+                auto episode = sampleDetails().episodes.front();
+                episode.episode.id = EpisodeId {100 + offset + index};
+                episode.episode.sortOrder = offset + index;
+                episode.episode.episodeNumber = offset + index + 1.0;
+                episode.media.clear();
+                details.episodes.push_back(std::move(episode));
+            }
+            co_return std::optional<SubjectLibraryDetails> {
+                std::move(details)};
+        });
+
+    viewModel.openSubject(21);
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(viewModel.episodes().size(), 24);
+    EXPECT_EQ(viewModel.totalEpisodeCount(), 50);
+    EXPECT_TRUE(viewModel.hasMoreEpisodes());
+
+    viewModel.loadMoreEpisodes();
+    processUntilSettled(viewModel);
+    EXPECT_EQ(viewModel.episodes().size(), 48);
+    EXPECT_TRUE(viewModel.hasMoreEpisodes());
+
+    viewModel.loadMoreEpisodes();
+    processUntilSettled(viewModel);
+    EXPECT_EQ(viewModel.episodes().size(), 50);
+    EXPECT_FALSE(viewModel.hasMoreEpisodes());
+    EXPECT_EQ(offsets, (std::vector<int> {0, 24, 48}));
 }
 
 #define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \

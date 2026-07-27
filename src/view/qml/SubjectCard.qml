@@ -27,12 +27,29 @@ Rectangle {
         radius: Theme.radiusSmall
         color: root.subject && root.subject.color
                ? root.subject.color : Theme.surfaceRaised
+        clip: true
+
+        Image {
+            id: coverImage
+            anchors.fill: parent
+            source: root.subject && root.subject.coverUrl
+                    ? root.subject.coverUrl : ""
+            sourceSize: Qt.size(Math.ceil(width * Screen.devicePixelRatio),
+                                Math.ceil(height * Screen.devicePixelRatio))
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
+            mipmap: true
+            autoTransform: true
+            visible: status === Image.Ready
+        }
 
         AppText {
             anchors.centerIn: parent
             text: root.subject && root.subject.title
                   ? root.subject.title.slice(0, 1) : "A"
             color: "#dfe3e6"
+            visible: !coverImage.visible
             opacity: 0.78
             font.pixelSize: 54
             font.weight: Font.Light
@@ -60,7 +77,7 @@ Rectangle {
             width: statusLabel.implicitWidth + 12
             height: 24
             radius: 5
-            color: "#b3111315"
+            color: Theme.dark ? "#b3111315" : "#e6ffffff"
 
             AppText {
                 id: statusLabel
