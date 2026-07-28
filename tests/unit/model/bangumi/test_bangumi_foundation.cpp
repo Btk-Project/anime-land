@@ -880,7 +880,7 @@ TEST(BangumiCollections, ParsesOfficialPagedCollectionShape) {
         "collection_total": 100,
         "score": 8.2,
         "rank": 10,
-        "tags": [{"name": "动画", "count": 20, "total_cont": 30}]
+        "tags": [{"name": "动画", "count": 20, "total_count": 30}]
       }
     }]
   })json");

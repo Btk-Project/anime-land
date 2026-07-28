@@ -24,7 +24,9 @@ auto subjectColor(std::int64_t id) -> QString {
 }
 
 auto coverUrl(const BangumiSubjectImages &images) -> QString {
-    return !images.medium.isEmpty() ? images.medium : images.common;
+    return !images.large.isEmpty()
+               ? images.large
+               : !images.common.isEmpty() ? images.common : images.medium;
 }
 
 auto episodeMeta(int episodeCount) -> QString {

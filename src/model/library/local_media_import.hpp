@@ -39,6 +39,7 @@ struct MediaAssociationSummary {
     std::optional<double> episodeNumber;
     int episodeType = 0;
     int sortOrder = 0;
+    QString subjectCoverUrl {};
 };
 
 struct LibraryMediaEntry {
@@ -50,7 +51,15 @@ struct AssociationEpisodeOption {
     EpisodeId id;
     QString title;
     QString displayNumber;
+    std::optional<double> episodeNumber;
     int episodeType = 0;
+};
+
+struct AssociationEpisodePage {
+    std::vector<AssociationEpisodeOption> episodes;
+    int total = 0;
+    int limit = 0;
+    int offset = 0;
 };
 
 struct EpisodeLibraryEntry {
@@ -106,8 +115,9 @@ public:
         -> ilias::Task<LibraryResult<void>>;
     auto searchAssociationSubjects(QString query)
         -> ilias::Task<LibraryResult<std::vector<BangumiSearchSubject>>>;
-    auto loadAssociationEpisodes(const BangumiSearchSubject &subject)
-        -> ilias::Task<LibraryResult<std::vector<AssociationEpisodeOption>>>;
+    auto loadAssociationEpisodes(const BangumiSearchSubject &subject,
+                                 int limit = 24, int offset = 0)
+        -> ilias::Task<LibraryResult<AssociationEpisodePage>>;
     auto linkMedia(SourceItemId item, EpisodeId episode)
         -> ilias::Task<LibraryResult<void>>;
     auto unlinkMedia(SourceItemId item, EpisodeId episode)
@@ -118,7 +128,8 @@ public:
     auto ensureBangumiSubject(std::int64_t bangumiSubjectId)
         -> ilias::Task<LibraryResult<SubjectId>>;
     auto getSubjectLibraryDetails(SubjectId subject, int limit = 24,
-                                  int offset = 0)
+                                  int offset = 0,
+                                  bool descending = false)
         -> ilias::Task<LibraryResult<std::optional<SubjectLibraryDetails>>>;
     auto playEpisode(EpisodeId episode)
         -> ilias::Task<LibraryResult<void>>;

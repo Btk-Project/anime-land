@@ -81,6 +81,15 @@ struct EpisodeSnapshot {
     std::optional<QDateTime> remoteUpdatedAt;
 };
 
+/** Exact user-authored replacement; null optional fields clear stored values. */
+struct SubjectMetadataReplacement {
+    int subjectType = 2;
+    QString title;
+    std::optional<QString> titleCn;
+    std::optional<QString> summary;
+    std::optional<QUrl> coverUrl;
+};
+
 /// 从数据库读取的标签关系，保留标签来源以支持多提供者共存。
 struct StoredSubjectTag {
     QString name;
@@ -195,6 +204,14 @@ public:
                                 std::vector<EpisodeSnapshot> snapshots)
         -> ilias::IoTask<std::vector<EpisodeId>>;
 
+    /** Exactly replaces editable metadata while preserving external identity. */
+    auto replaceSubjectMetadata(
+        SubjectId subject, SubjectMetadataReplacement metadata)
+        -> ilias::IoTask<void>;
+
+    /** Deletes a subject; schema cascades remove episodes and media links. */
+    auto removeSubject(SubjectId subject) -> ilias::IoTask<bool>;
+
     /// 原子替换指定来源的条目标签；空集合表示清空该来源标签。
     auto replaceSubjectTags(SubjectId subject, QString providerKey,
                             std::vector<SubjectTagSnapshot> tags)
@@ -216,7 +233,8 @@ public:
     auto listEpisodes(SubjectId subject) -> ilias::IoTask<std::vector<EpisodeDetails>>;
 
     /// 按稳定顺序分页列出章节；每页最多 50 条。
-    auto listEpisodesPage(SubjectId subject, int limit, int offset)
+    auto listEpisodesPage(SubjectId subject, int limit, int offset,
+                          bool descending = false)
         -> ilias::IoTask<EpisodeDetailsPage>;
 
     /**

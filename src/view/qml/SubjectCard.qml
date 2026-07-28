@@ -17,7 +17,7 @@ Rectangle {
     Behavior on border.color { ColorAnimation { duration: 120 } }
     Behavior on color { ColorAnimation { duration: 120 } }
 
-    Rectangle {
+    CoverImage {
         id: cover
         anchors.left: parent.left
         anchors.right: parent.right
@@ -25,35 +25,12 @@ Rectangle {
         anchors.margins: 6
         height: 208
         radius: Theme.radiusSmall
-        color: root.subject && root.subject.color
-               ? root.subject.color : Theme.surfaceRaised
-        clip: true
-
-        Image {
-            id: coverImage
-            anchors.fill: parent
-            source: root.subject && root.subject.coverUrl
-                    ? root.subject.coverUrl : ""
-            sourceSize: Qt.size(Math.ceil(width * Screen.devicePixelRatio),
-                                Math.ceil(height * Screen.devicePixelRatio))
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-            mipmap: true
-            autoTransform: true
-            visible: status === Image.Ready
-        }
-
-        AppText {
-            anchors.centerIn: parent
-            text: root.subject && root.subject.title
-                  ? root.subject.title.slice(0, 1) : "A"
-            color: "#dfe3e6"
-            visible: !coverImage.visible
-            opacity: 0.78
-            font.pixelSize: 54
-            font.weight: Font.Light
-        }
+        source: root.subject && root.subject.coverUrl
+                ? root.subject.coverUrl : ""
+        title: root.subject && root.subject.title
+               ? root.subject.title : ""
+        fallbackColor: root.subject && root.subject.color
+                       ? root.subject.color : Theme.surfaceRaised
 
         Rectangle {
             anchors.left: parent.left

@@ -67,7 +67,7 @@ struct BangumiSubjectImages {
 
 /**
  * @brief SlimSubject 的标签统计协议/领域值。
- * @pre wire 字段 total_cont 通过 rename_tag 映射。
+ * @pre wire 字段 total_count 通过 rename_tag 映射。
  * @post 数值按服务端原样保留。
  */
 struct BangumiSubjectTag {

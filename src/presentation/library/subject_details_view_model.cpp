@@ -12,8 +12,6 @@
 namespace anime_land {
 namespace {
 
-constexpr int kEpisodePageSize = 24;
-
 constexpr std::array<const char *, 8> kSubjectColors = {
     "#59636b", "#5f6859", "#685d58", "#6b5c65",
     "#5c626d", "#545d63", "#655b60", "#58656a",
@@ -100,8 +98,10 @@ auto bangumiId(const persistence::SubjectDetails &subject) -> qlonglong {
 SubjectDetailsViewModel::SubjectDetailsViewModel(
     LocalMediaImportService &service, QObject *parent)
     : SubjectDetailsViewModel(
-          [&service](SubjectId subject, int limit, int offset) {
-              return service.getSubjectLibraryDetails(subject, limit, offset);
+          [&service](SubjectId subject, int limit, int offset,
+                     bool descending) {
+              return service.getSubjectLibraryDetails(
+                  subject, limit, offset, descending);
           },
           [&service](std::int64_t bangumiSubjectId) {
               return service.ensureBangumiSubject(bangumiSubjectId);
@@ -109,13 +109,16 @@ SubjectDetailsViewModel::SubjectDetailsViewModel(
           [&service](EpisodeId episode) {
               return service.playEpisode(episode);
           },
-          parent) {}
+          parent,
+          [&service](std::int64_t bangumiSubjectId) {
+              return service.findBangumiSubject(bangumiSubjectId);
+          }) {}
 
 SubjectDetailsViewModel::SubjectDetailsViewModel(
     DetailsLoader loader, BangumiResolver resolver, EpisodePlayer player,
-    QObject *parent)
+    QObject *parent, BangumiFinder finder)
     : SubjectDetailsViewModel(
-          [loader = std::move(loader)](SubjectId subject, int, int)
+          [loader = std::move(loader)](SubjectId subject, int, int, bool)
               -> ilias::Task<LibraryResult<
                   std::optional<SubjectLibraryDetails>>> {
               if (!loader) {
@@ -132,14 +135,15 @@ SubjectDetailsViewModel::SubjectDetailsViewModel(
               }
               co_return result;
           },
-          std::move(resolver), std::move(player), parent) {}
+          std::move(resolver), std::move(player), parent,
+          std::move(finder)) {}
 
 SubjectDetailsViewModel::SubjectDetailsViewModel(
     PagedDetailsLoader loader, BangumiResolver resolver,
-    EpisodePlayer player, QObject *parent)
+    EpisodePlayer player, QObject *parent, BangumiFinder finder)
     : QObject(parent), mLoader(std::move(loader)),
       mResolver(std::move(resolver)),
-      mPlayer(std::move(player)) {}
+      mFinder(std::move(finder)), mPlayer(std::move(player)) {}
 
 SubjectDetailsViewModel::~SubjectDetailsViewModel() {
     mDestroying = true;
@@ -163,6 +167,7 @@ void SubjectDetailsViewModel::openSubject(qlonglong subjectId) {
         return;
     }
     mLoading = true;
+    mRefreshing = false;
     mLoadingMore = false;
     mSubject.clear();
     mEpisodes.clear();
@@ -170,12 +175,14 @@ void SubjectDetailsViewModel::openSubject(qlonglong subjectId) {
     mCurrentSubject = subject;
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
+    mCurrentEpisodePage = 1;
+    mEpisodeSortDescending = false;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     const auto generation = ++mGeneration;
     emit detailsChanged();
     emit stateChanged();
-    mTasks.spawn(load(subject, 0, false, generation));
+    mTasks.spawn(loadPage(subject, 1, false, generation));
 }
 
 void SubjectDetailsViewModel::openBangumiSubject(
@@ -188,6 +195,7 @@ void SubjectDetailsViewModel::openBangumiSubject(
         return;
     }
     mLoading = true;
+    mRefreshing = false;
     mLoadingMore = false;
     mSubject.clear();
     mEpisodes.clear();
@@ -195,6 +203,8 @@ void SubjectDetailsViewModel::openBangumiSubject(
     mCurrentSubject.reset();
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
+    mCurrentEpisodePage = 1;
+    mEpisodeSortDescending = false;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     const auto generation = ++mGeneration;
@@ -215,7 +225,7 @@ void SubjectDetailsViewModel::playEpisode(qlonglong episodeId) {
     mPlaying = true;
     mErrorMessage.clear();
     mNoticeMessage.clear();
-    const auto generation = ++mGeneration;
+    const auto generation = mGeneration;
     emit stateChanged();
     mTasks.spawn(play(episode, generation));
 }
@@ -229,16 +239,48 @@ void SubjectDetailsViewModel::playFirstAvailable() {
 }
 
 void SubjectDetailsViewModel::loadMoreEpisodes() {
+    nextEpisodePage();
+}
+
+void SubjectDetailsViewModel::goToEpisodePage(int page) {
     if (mLoading || mLoadingMore || mPlaying || mDestroying
-        || !mCurrentSubject || !hasMoreEpisodes()) {
+        || !mCurrentSubject || page < 1 || page > episodePageCount()
+        || page == mCurrentEpisodePage) {
         return;
     }
+    // Page navigation takes priority over an optional stale-while-revalidate
+    // task. The network synchronization may still finish persisting in the
+    // background, but its now-stale presentation result is ignored.
+    mRefreshing = false;
     mLoadingMore = true;
     mErrorMessage.clear();
     const auto generation = ++mGeneration;
     emit stateChanged();
-    mTasks.spawn(load(*mCurrentSubject, static_cast<int>(mEpisodes.size()),
-                      true, generation));
+    mTasks.spawn(loadPage(*mCurrentSubject, page,
+                          mEpisodeSortDescending, generation));
+}
+
+void SubjectDetailsViewModel::previousEpisodePage() {
+    goToEpisodePage(mCurrentEpisodePage - 1);
+}
+
+void SubjectDetailsViewModel::nextEpisodePage() {
+    goToEpisodePage(mCurrentEpisodePage + 1);
+}
+
+void SubjectDetailsViewModel::setEpisodeSortDescending(bool descending) {
+    if (mLoading || mLoadingMore || mPlaying || mDestroying
+        || !mCurrentSubject || descending == mEpisodeSortDescending) {
+        return;
+    }
+    mRefreshing = false;
+    mEpisodeSortDescending = descending;
+    mLoadingMore = true;
+    mErrorMessage.clear();
+    const auto generation = ++mGeneration;
+    emit detailsChanged();
+    emit stateChanged();
+    mTasks.spawn(loadPage(*mCurrentSubject, 1, descending, generation));
 }
 
 void SubjectDetailsViewModel::clear() {
@@ -246,21 +288,24 @@ void SubjectDetailsViewModel::clear() {
         return;
     }
     ++mGeneration;
+    mRefreshing = false;
     mSubject.clear();
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
     mCurrentSubject.reset();
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
+    mCurrentEpisodePage = 1;
+    mEpisodeSortDescending = false;
     mErrorMessage.clear();
     mNoticeMessage.clear();
     emit detailsChanged();
     emit stateChanged();
 }
 
-auto SubjectDetailsViewModel::load(SubjectId subject, int offset,
-                                   bool append,
-                                   std::uint64_t generation)
+auto SubjectDetailsViewModel::loadPage(SubjectId subject, int page,
+                                       bool descending,
+                                       std::uint64_t generation)
     -> ilias::Task<void> {
     if (!mLoader) {
         if (!mDestroying && generation == mGeneration) {
@@ -270,12 +315,15 @@ auto SubjectDetailsViewModel::load(SubjectId subject, int offset,
         }
         co_return;
     }
-    auto result = co_await mLoader(subject, kEpisodePageSize, offset);
+    const int offset = (page - 1) * kEpisodePageSize;
+    auto result = co_await mLoader(subject, kEpisodePageSize, offset,
+                                   descending);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
     mLoading = false;
     mLoadingMore = false;
+    mRefreshing = false;
     if (!result) {
         mErrorMessage = result.error().message;
         AL_LOG_WARN("[presentation.subject] load failed code={}",
@@ -289,7 +337,9 @@ auto SubjectDetailsViewModel::load(SubjectId subject, int offset,
         co_return;
     }
     mCurrentSubject = subject;
-    applyDetails(**result, append);
+    mCurrentEpisodePage = page;
+    mEpisodeSortDescending = descending;
+    applyDetails(**result, false);
     emit detailsChanged();
     emit stateChanged();
 }
@@ -304,13 +354,64 @@ auto SubjectDetailsViewModel::resolveAndLoad(
         }
         co_return;
     }
+    std::optional<SubjectId> localSubject;
+    if (mFinder) {
+        auto found = co_await mFinder(bangumiSubjectId);
+        if (mDestroying || generation != mGeneration) {
+            co_return;
+        }
+        if (!found) {
+            mLoading = false;
+            mErrorMessage = found.error().message;
+            emit stateChanged();
+            co_return;
+        }
+        localSubject = *found;
+    }
+
+    if (localSubject) {
+        if (!mLoader) {
+            mLoading = false;
+            reportInvalid(QStringLiteral("条目详情加载服务未配置"));
+            co_return;
+        }
+        auto local = co_await mLoader(*localSubject, kEpisodePageSize, 0,
+                                      false);
+        if (mDestroying || generation != mGeneration) {
+            co_return;
+        }
+        if (local && *local) {
+            mCurrentSubject = *localSubject;
+            mCurrentEpisodePage = 1;
+            mEpisodeSortDescending = false;
+            applyDetails(**local, false);
+            mLoading = false;
+            mRefreshing = true;
+            emit detailsChanged();
+            emit stateChanged();
+        }
+        else if (!local) {
+            AL_LOG_WARN("[presentation.subject] local-first load failed code={}",
+                        libraryErrorCodeName(local.error().code));
+        }
+    }
+
     auto resolved = co_await mResolver(bangumiSubjectId);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
     if (!resolved) {
         mLoading = false;
-        mErrorMessage = resolved.error().message;
+        mRefreshing = false;
+        if (hasSubject()) {
+            mErrorMessage.clear();
+            mNoticeMessage = QStringLiteral(
+                "已显示本地数据；Bangumi 后台刷新失败：%1")
+                                 .arg(resolved.error().message);
+        }
+        else {
+            mErrorMessage = resolved.error().message;
+        }
         emit stateChanged();
         co_return;
     }
@@ -319,22 +420,38 @@ auto SubjectDetailsViewModel::resolveAndLoad(
         reportInvalid(QStringLiteral("条目详情加载服务未配置"));
         co_return;
     }
-    auto result = co_await mLoader(*resolved, kEpisodePageSize, 0);
+    auto result = co_await mLoader(*resolved, kEpisodePageSize, 0, false);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
     mLoading = false;
+    mRefreshing = false;
     if (!result) {
-        mErrorMessage = result.error().message;
+        if (hasSubject()) {
+            mErrorMessage.clear();
+            mNoticeMessage = QStringLiteral(
+                "已显示本地数据；刷新后的数据库读取失败：%1")
+                                 .arg(result.error().message);
+        }
+        else {
+            mErrorMessage = result.error().message;
+        }
         emit stateChanged();
         co_return;
     }
     if (!*result) {
-        mErrorMessage = QStringLiteral("本地数据库中没有这个条目");
+        if (hasSubject()) {
+            mNoticeMessage = QStringLiteral("已显示本地数据；后台刷新未返回条目");
+        }
+        else {
+            mErrorMessage = QStringLiteral("本地数据库中没有这个条目");
+        }
         emit stateChanged();
         co_return;
     }
     mCurrentSubject = *resolved;
+    mCurrentEpisodePage = 1;
+    mEpisodeSortDescending = false;
     applyDetails(**result, false);
     emit detailsChanged();
     emit stateChanged();

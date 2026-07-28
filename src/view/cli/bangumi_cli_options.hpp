@@ -51,8 +51,7 @@ struct CommonCommandOptions {
         make_tags<arg_absolute_name<"log-level">,
                   arg_choices<"trace", "debug", "info", "warn", "error", "critical">,
                   arg_env<"ANIME_LAND_LOG_LEVEL">,
-                  arg_default<"info"_cs>,
-                  arg_help<"set the application log level">>(&CommonCommandOptions::logLevel)
+                  arg_help<"override the configured application log level">>(&CommonCommandOptions::logLevel)
     );
   };
     // clang-format on

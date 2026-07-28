@@ -19,42 +19,52 @@ Rectangle {
         anchors.rightMargin: 12
         spacing: 14
 
-        AppText {
+        SelectableText {
             Layout.preferredWidth: 30
             text: root.episode ? root.episode.number : ""
             color: Theme.textFaint
             font.pixelSize: Theme.captionSize
             font.weight: Font.DemiBold
+            wrapMode: TextEdit.NoWrap
+            clip: true
+            Layout.alignment: Qt.AlignVCenter
         }
 
         Column {
             Layout.fillWidth: true
             spacing: 5
 
-            AppText {
+            SelectableText {
                 width: parent.width
                 text: root.episode ? root.episode.title : ""
                 color: Theme.text
                 font.pixelSize: Theme.bodySize
                 font.weight: Font.DemiBold
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
+                height: implicitHeight
             }
 
-            AppText {
+            SelectableText {
                 width: parent.width
                 text: root.episode ? root.episode.source : ""
                 color: root.episode && root.episode.linked
                        ? Theme.textMuted : Theme.warning
                 font.pixelSize: Theme.captionSize
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
+                height: implicitHeight
             }
         }
 
-        AppText {
+        SelectableText {
             Layout.preferredWidth: 52
             text: root.episode ? root.episode.duration : ""
             color: Theme.textFaint
             font.pixelSize: Theme.captionSize
+            wrapMode: TextEdit.NoWrap
+            clip: true
+            Layout.alignment: Qt.AlignVCenter
         }
 
         Rectangle {

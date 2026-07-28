@@ -29,6 +29,22 @@ class ApplicationSettingsViewModel final : public QObject {
                    NOTIFY settingsChanged)
     Q_PROPERTY(QString redirectUri READ redirectUri NOTIFY settingsChanged)
     Q_PROPERTY(QString proxyUrl READ proxyUrl NOTIFY settingsChanged)
+    Q_PROPERTY(bool bangumiCacheEnabled READ bangumiCacheEnabled
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(QString bangumiCacheDirectory READ bangumiCacheDirectory
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(int bangumiCacheMaxSizeMiB READ bangumiCacheMaxSizeMiB
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(int bangumiCacheTtlDays READ bangumiCacheTtlDays
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(QString logLevel READ logLevel NOTIFY settingsChanged)
+    Q_PROPERTY(QString logDirectory READ logDirectory NOTIFY settingsChanged)
+    Q_PROPERTY(int logMaxFileSizeMiB READ logMaxFileSizeMiB
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(int logMaxFileCount READ logMaxFileCount
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(QString activeLogFile READ activeLogFile
+                   NOTIFY settingsChanged)
     Q_PROPERTY(bool clientSecretConfigured READ clientSecretConfigured
                    NOTIFY settingsChanged)
     Q_PROPERTY(bool credentialPersistenceAvailable
@@ -54,6 +70,25 @@ public:
     auto bangumiClientId() const -> QString { return mBangumiClientId; }
     auto redirectUri() const -> QString { return mRedirectUri; }
     auto proxyUrl() const -> QString { return mProxyUrl; }
+    auto bangumiCacheEnabled() const noexcept -> bool {
+        return mBangumiCacheEnabled;
+    }
+    auto bangumiCacheDirectory() const -> QString {
+        return mBangumiCacheDirectory;
+    }
+    auto bangumiCacheMaxSizeMiB() const noexcept -> int {
+        return mBangumiCacheMaxSizeMiB;
+    }
+    auto bangumiCacheTtlDays() const noexcept -> int {
+        return mBangumiCacheTtlDays;
+    }
+    auto logLevel() const -> QString { return mLogLevel; }
+    auto logDirectory() const -> QString { return mLogDirectory; }
+    auto logMaxFileSizeMiB() const noexcept -> int {
+        return mLogMaxFileSizeMiB;
+    }
+    auto logMaxFileCount() const noexcept -> int { return mLogMaxFileCount; }
+    auto activeLogFile() const -> QString { return mActiveLogFile; }
     auto clientSecretConfigured() const noexcept -> bool {
         return mClientSecretConfigured;
     }
@@ -73,6 +108,14 @@ public:
                                          const QString &newClientSecret,
                                          const QString &redirectUri,
                                          const QString &proxyUrl);
+    Q_INVOKABLE void saveLogSettings(const QString &level,
+                                     const QString &directory,
+                                     int maxFileSizeMiB,
+                                     int maxFileCount);
+    Q_INVOKABLE void saveBangumiCacheSettings(bool enabled,
+                                              const QString &directory,
+                                              int maxSizeMiB,
+                                              int ttlDays);
     Q_INVOKABLE void reload();
 
 signals:
@@ -86,6 +129,8 @@ private:
     auto persistBangumi(BangumiSettings previous,
                         BangumiSettings updated,
                         std::uint64_t generation) -> ilias::Task<void>;
+    auto persistLog(GeneralSettings previous, GeneralSettings updated,
+                    std::uint64_t generation) -> ilias::Task<void>;
     void loadSnapshot();
     void applyTheme();
     void reportError(QString message);
@@ -99,15 +144,24 @@ private:
     QString mBangumiClientId;
     QString mRedirectUri;
     QString mProxyUrl;
+    QString mBangumiCacheDirectory;
+    QString mLogLevel;
+    QString mLogDirectory;
+    QString mActiveLogFile;
     QString mErrorMessage;
     QString mNoticeMessage;
     std::uint64_t mGeneration = 0;
     bool mSystemDark = false;
     bool mClientSecretConfigured = false;
+    bool mBangumiCacheEnabled = true;
     bool mCredentialPersistenceAvailable = false;
     bool mSaving = false;
     bool mRestartRequired = false;
     bool mDestroying = false;
+    int mLogMaxFileSizeMiB = 10;
+    int mLogMaxFileCount = 5;
+    int mBangumiCacheMaxSizeMiB = 512;
+    int mBangumiCacheTtlDays = 7;
 };
 
 } // namespace anime_land

@@ -260,6 +260,7 @@ TEST(LocalDatabaseConfiguration, LeavesUnknownSchemaUntouched) {
 }
 
 TEST(LocalDatabaseConfiguration, OpensEncryptedDatabaseFromSqlSettings) {
+#if defined(ENABLE_SQLCIPHER_PLUGINS)
     QTemporaryDir directory;
     ASSERT_TRUE(directory.isValid());
 
@@ -289,6 +290,7 @@ TEST(LocalDatabaseConfiguration, OpensEncryptedDatabaseFromSqlSettings) {
         auto store = CatalogStore::open(*wrongPassword).wait();
         EXPECT_FALSE(store);
     }
+#endif
 }
 
 TEST(CatalogStore, RecreatesMissingTable) {

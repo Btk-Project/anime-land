@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <utility>
 
 namespace anime_land {
@@ -24,12 +25,13 @@ struct EpisodeMediaGroup {
     QString number;
     std::optional<double> episodeNumber;
     int sortOrder = 0;
-    QVariantList items;
+    QVariantList items {};
 };
 
 struct SubjectMediaGroup {
     qlonglong subjectId = 0;
     QString title;
+    QString coverUrl;
     QHash<qlonglong, qsizetype> episodeIndices;
     std::vector<EpisodeMediaGroup> episodes;
     QSet<qlonglong> mediaIds;
@@ -179,7 +181,62 @@ auto episodeMap(const AssociationEpisodeOption &episode) -> QVariantMap {
         {QStringLiteral("id"), QVariant::fromValue(episode.id.value)},
         {QStringLiteral("title"), episode.title},
         {QStringLiteral("number"), episode.displayNumber},
+        {QStringLiteral("episodeNumber"),
+         episode.episodeNumber ? QVariant {*episode.episodeNumber}
+                               : QVariant {}},
         {QStringLiteral("type"), episode.episodeType},
+    };
+}
+
+auto localMetadataInput(const QString &displayTitle,
+                        const QString &originalTitle,
+                        const QString &summary, const QString &coverUrl,
+                        const QString &episodeTitle,
+                        const QString &episodeNumber)
+    -> LibraryResult<LocalSubjectMetadata> {
+    const QString title = displayTitle.trimmed();
+    if (title.isEmpty()) {
+        return ilias::Err(libraryError(
+            LibraryErrorCode::InvalidStableKey,
+            QStringLiteral("自定义条目标题不能为空")));
+    }
+
+    std::optional<QUrl> parsedCover;
+    const QString normalizedCover = coverUrl.trimmed();
+    if (!normalizedCover.isEmpty()) {
+        const QUrl url(normalizedCover, QUrl::StrictMode);
+        const QString scheme = url.scheme().toLower();
+        if (!url.isValid()
+            || (scheme != QStringLiteral("http")
+                && scheme != QStringLiteral("https")
+                && scheme != QStringLiteral("file"))) {
+            return ilias::Err(libraryError(
+                LibraryErrorCode::InvalidMediaDescriptor,
+                QStringLiteral(
+                    "封面地址必须为空，或是有效的 HTTP/HTTPS/file URL")));
+        }
+        parsedCover = url;
+    }
+
+    std::optional<double> parsedEpisodeNumber;
+    const QString normalizedNumber = episodeNumber.trimmed();
+    if (!normalizedNumber.isEmpty()) {
+        bool valid = false;
+        const double value = normalizedNumber.toDouble(&valid);
+        if (!valid || !std::isfinite(value) || value < 0.0) {
+            return ilias::Err(libraryError(
+                LibraryErrorCode::InvalidPosition,
+                QStringLiteral("章节序号必须为空或为非负数字")));
+        }
+        parsedEpisodeNumber = value;
+    }
+    return LocalSubjectMetadata {
+        .displayTitle = title,
+        .originalTitle = originalTitle,
+        .summary = summary,
+        .coverUrl = std::move(parsedCover),
+        .episodeTitle = episodeTitle,
+        .episodeNumber = parsedEpisodeNumber,
     };
 }
 
@@ -198,8 +255,9 @@ LibraryViewModel::LibraryViewModel(LocalMediaImportService &service,
       mSubjectSearcher([&service](QString query) {
           return service.searchAssociationSubjects(std::move(query));
       }),
-      mEpisodeLoader([&service](const BangumiSearchSubject &subject) {
-          return service.loadAssociationEpisodes(subject);
+      mEpisodeLoader([&service](const BangumiSearchSubject &subject,
+                                int limit, int offset) {
+          return service.loadAssociationEpisodes(subject, limit, offset);
       }),
       mLinker([&service](SourceItemId item, EpisodeId episode) {
           return service.linkMedia(item, episode);
@@ -211,8 +269,34 @@ LibraryViewModel::LibraryViewModel(LocalMediaImportService &service,
           return service.playMedia(item);
       }) {}
 
+LibraryViewModel::LibraryViewModel(
+    LocalMediaImportService &service,
+    LocalMetadataService &metadataService, QObject *parent)
+    : LibraryViewModel(service, parent) {
+    mCustomMetadataCreator =
+        [&metadataService](SourceItemId item, LocalSubjectMetadata metadata) {
+            return metadataService.createAndLink(item, std::move(metadata));
+        };
+    mLocalMetadataLoader = [&metadataService](SubjectId subject) {
+        return metadataService.load(subject);
+    };
+    mLocalMetadataUpdater =
+        [&metadataService](SubjectId subject, LocalSubjectMetadata metadata) {
+            return metadataService.update(subject, std::move(metadata));
+        };
+    mLocalMetadataRemover = [&metadataService](SubjectId subject) {
+        return metadataService.remove(subject);
+    };
+}
+
 LibraryViewModel::LibraryViewModel(LibraryLoader loader, QObject *parent)
     : QObject(parent), mLibraryLoader(std::move(loader)) {}
+
+LibraryViewModel::LibraryViewModel(SubjectSearcher subjectSearcher,
+                                   EpisodeLoader episodeLoader,
+                                   QObject *parent)
+    : QObject(parent), mSubjectSearcher(std::move(subjectSearcher)),
+      mEpisodeLoader(std::move(episodeLoader)) {}
 
 LibraryViewModel::LibraryViewModel(MediaLoader loader,
                                    MediaImporter importer,
@@ -302,6 +386,11 @@ void LibraryViewModel::searchAssociationSubjects(const QString &query) {
     mErrorMessage.clear();
     mNoticeMessage.clear();
     mAssociationEpisodes.clear();
+    mSelectedAssociationSubjectId = 0;
+    mAssociationEpisodeTotal = 0;
+    mAssociationEpisodePage = 0;
+    mAssociationEpisodeFocusIndex = -1;
+    mAssociationEpisodeDescending = false;
     const auto generation = ++mGeneration;
     emit associationChanged();
     emit stateChanged();
@@ -313,13 +402,86 @@ void LibraryViewModel::selectAssociationSubject(
     if (isBusy() || bangumiSubjectId <= 0) {
         return;
     }
+    mSelectedAssociationSubjectId = bangumiSubjectId;
+    mAssociationEpisodeTotal = 0;
+    mAssociationEpisodePage = 0;
+    mAssociationEpisodeFocusIndex = -1;
+    mAssociationEpisodeDescending = false;
+    requestAssociationEpisodePage(1, false);
+}
+
+void LibraryViewModel::goToAssociationEpisodePage(int page) {
+    if (isBusy() || mSelectedAssociationSubjectId <= 0 || page < 1
+        || page > associationEpisodePageCount()
+        || page == mAssociationEpisodePage) {
+        return;
+    }
+    requestAssociationEpisodePage(page, mAssociationEpisodeDescending);
+}
+
+void LibraryViewModel::previousAssociationEpisodePage() {
+    goToAssociationEpisodePage(mAssociationEpisodePage - 1);
+}
+
+void LibraryViewModel::nextAssociationEpisodePage() {
+    goToAssociationEpisodePage(mAssociationEpisodePage + 1);
+}
+
+void LibraryViewModel::setAssociationEpisodeDescending(bool descending) {
+    if (isBusy() || mSelectedAssociationSubjectId <= 0
+        || descending == mAssociationEpisodeDescending
+        || mAssociationEpisodeTotal <= 0) {
+        return;
+    }
+    requestAssociationEpisodePage(1, descending);
+}
+
+void LibraryViewModel::locateAssociationEpisode(const QString &number) {
+    if (isBusy() || mSelectedAssociationSubjectId <= 0
+        || mAssociationEpisodeTotal <= 0) {
+        return;
+    }
+    QString normalized = number.trimmed();
+    if (normalized.startsWith(QStringLiteral("EP"),
+                              Qt::CaseInsensitive)) {
+        normalized.remove(0, 2);
+    }
+    bool valid = false;
+    const double episodeNumber = normalized.toDouble(&valid);
+    if (!valid || !std::isfinite(episodeNumber) || episodeNumber <= 0.0) {
+        mErrorMessage = QStringLiteral("请输入有效的正数章节号，例如 500");
+        emit stateChanged();
+        return;
+    }
+    const int ordinal = static_cast<int>(std::ceil(episodeNumber));
+    if (ordinal > mAssociationEpisodeTotal) {
+        mErrorMessage = QStringLiteral("章节号超出当前条目的 %1 个章节")
+                            .arg(mAssociationEpisodeTotal);
+        emit stateChanged();
+        return;
+    }
+    const int page = mAssociationEpisodeDescending
+                         ? (mAssociationEpisodeTotal - ordinal)
+                                   / kAssociationEpisodePageSize
+                               + 1
+                         : (ordinal - 1) / kAssociationEpisodePageSize + 1;
+    requestAssociationEpisodePage(page, mAssociationEpisodeDescending,
+                                  episodeNumber);
+}
+
+void LibraryViewModel::requestAssociationEpisodePage(
+    int page, bool descending,
+    std::optional<double> focusEpisodeNumber) {
     mAssociating = true;
     mErrorMessage.clear();
+    mNoticeMessage.clear();
     mAssociationEpisodes.clear();
+    mAssociationEpisodeFocusIndex = -1;
     const auto generation = ++mGeneration;
     emit associationChanged();
     emit stateChanged();
-    mTasks.spawn(loadEpisodes(bangumiSubjectId, generation));
+    mTasks.spawn(loadEpisodes(mSelectedAssociationSubjectId, page, descending,
+                              focusEpisodeNumber, generation));
 }
 
 void LibraryViewModel::linkMedia(qlonglong sourceItemId,
@@ -378,6 +540,111 @@ void LibraryViewModel::playMedia(qlonglong sourceItemId) {
     mTasks.spawn(play(item, generation));
 }
 
+void LibraryViewModel::createCustomMetadata(
+    qlonglong sourceItemId, const QString &displayTitle,
+    const QString &originalTitle, const QString &summary,
+    const QString &coverUrl, const QString &episodeTitle,
+    const QString &episodeNumber) {
+    if (isBusy()) {
+        return;
+    }
+    const SourceItemId item {sourceItemId};
+    if (!isValid(item)) {
+        mErrorMessage = QStringLiteral("媒体项 ID 无效");
+        emit stateChanged();
+        return;
+    }
+    auto metadata = localMetadataInput(
+        displayTitle, originalTitle, summary, coverUrl, episodeTitle,
+        episodeNumber);
+    if (!metadata) {
+        mErrorMessage = metadata.error().message;
+        emit stateChanged();
+        return;
+    }
+
+    mAssociating = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在保存自定义元数据…");
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(createMetadata(item, std::move(*metadata), generation));
+}
+
+void LibraryViewModel::loadLocalMetadata(qlonglong subjectId) {
+    if (isBusy()) {
+        return;
+    }
+    const SubjectId subject {subjectId};
+    if (!isValid(subject)) {
+        mErrorMessage = QStringLiteral("本地条目 ID 无效");
+        emit stateChanged();
+        return;
+    }
+    mAssociating = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在读取本地元数据…");
+    mLocalMetadataEditor.clear();
+    const auto generation = ++mGeneration;
+    emit localMetadataEditorChanged();
+    emit stateChanged();
+    mTasks.spawn(loadLocalMetadataEditor(subject, generation));
+}
+
+void LibraryViewModel::updateLocalMetadata(
+    qlonglong subjectId, const QString &displayTitle,
+    const QString &originalTitle, const QString &summary,
+    const QString &coverUrl) {
+    if (isBusy()) {
+        return;
+    }
+    const SubjectId subject {subjectId};
+    if (!isValid(subject)) {
+        mErrorMessage = QStringLiteral("本地条目 ID 无效");
+        emit stateChanged();
+        return;
+    }
+    auto metadata = localMetadataInput(
+        displayTitle, originalTitle, summary, coverUrl, {}, {});
+    if (!metadata) {
+        mErrorMessage = metadata.error().message;
+        emit stateChanged();
+        return;
+    }
+    mAssociating = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在更新本地元数据…");
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(updateMetadata(subject, std::move(*metadata), generation));
+}
+
+void LibraryViewModel::deleteLocalMetadata(qlonglong subjectId) {
+    if (isBusy()) {
+        return;
+    }
+    const SubjectId subject {subjectId};
+    if (!isValid(subject)) {
+        mErrorMessage = QStringLiteral("本地条目 ID 无效");
+        emit stateChanged();
+        return;
+    }
+    mAssociating = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在删除本地元数据…");
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(removeLocalMetadata(subject, generation));
+}
+
+void LibraryViewModel::clearLocalMetadataEditor() {
+    if (mAssociating || mLocalMetadataEditor.isEmpty()) {
+        return;
+    }
+    mLocalMetadataEditor.clear();
+    emit localMetadataEditorChanged();
+}
+
 void LibraryViewModel::clearAssociationPicker() {
     if (mAssociating) {
         return;
@@ -385,6 +652,11 @@ void LibraryViewModel::clearAssociationPicker() {
     mSubjectResults.clear();
     mAssociationSubjects.clear();
     mAssociationEpisodes.clear();
+    mSelectedAssociationSubjectId = 0;
+    mAssociationEpisodeTotal = 0;
+    mAssociationEpisodePage = 0;
+    mAssociationEpisodeFocusIndex = -1;
+    mAssociationEpisodeDescending = false;
     emit associationChanged();
 }
 
@@ -522,8 +794,9 @@ auto LibraryViewModel::search(QString query, std::uint64_t generation)
     emit stateChanged();
 }
 
-auto LibraryViewModel::loadEpisodes(std::int64_t bangumiSubjectId,
-                                    std::uint64_t generation)
+auto LibraryViewModel::loadEpisodes(
+    std::int64_t bangumiSubjectId, int requestedPage, bool descending,
+    std::optional<double> focusEpisodeNumber, std::uint64_t generation)
     -> ilias::Task<void> {
     const auto found = std::ranges::find_if(
         mSubjectResults, [bangumiSubjectId](const BangumiSearchSubject &value) {
@@ -538,7 +811,27 @@ auto LibraryViewModel::loadEpisodes(std::int64_t bangumiSubjectId,
         co_return;
     }
     const BangumiSearchSubject selected = *found;
-    auto result = co_await mEpisodeLoader(selected);
+    int requestLimit = kAssociationEpisodePageSize;
+    int requestOffset = (requestedPage - 1) * kAssociationEpisodePageSize;
+    if (descending) {
+        const int consumed =
+            (requestedPage - 1) * kAssociationEpisodePageSize;
+        const int remaining =
+            std::max(0, mAssociationEpisodeTotal - consumed);
+        requestLimit = std::min(kAssociationEpisodePageSize, remaining);
+        requestOffset =
+            std::max(0, mAssociationEpisodeTotal - consumed - requestLimit);
+    }
+    if (requestedPage < 1 || requestLimit < 1 || requestOffset < 0) {
+        if (!mDestroying && generation == mGeneration) {
+            mAssociating = false;
+            mErrorMessage = QStringLiteral("章节页码已失效，请重新选择条目");
+            emit stateChanged();
+        }
+        co_return;
+    }
+    auto result =
+        co_await mEpisodeLoader(selected, requestLimit, requestOffset);
     if (mDestroying || generation != mGeneration) {
         co_return;
     }
@@ -548,13 +841,36 @@ auto LibraryViewModel::loadEpisodes(std::int64_t bangumiSubjectId,
         emit stateChanged();
         co_return;
     }
+    mAssociationEpisodeTotal = std::max(0, result->total);
+    const int pageCount = associationEpisodePageCount();
+    mAssociationEpisodePage =
+        pageCount == 0 ? 0 : std::clamp(requestedPage, 1, pageCount);
+    mAssociationEpisodeDescending = descending;
+    auto episodes = std::move(result->episodes);
+    if (descending) {
+        std::reverse(episodes.begin(), episodes.end());
+    }
     mAssociationEpisodes.clear();
-    mAssociationEpisodes.reserve(static_cast<qsizetype>(result->size()));
-    for (const auto &episode : *result) {
+    mAssociationEpisodes.reserve(static_cast<qsizetype>(episodes.size()));
+    mAssociationEpisodeFocusIndex = -1;
+    for (const auto &episode : episodes) {
+        if (focusEpisodeNumber && episode.episodeType == 0
+            && episode.episodeNumber
+            && std::abs(*episode.episodeNumber - *focusEpisodeNumber)
+                   < 0.000001) {
+            mAssociationEpisodeFocusIndex = mAssociationEpisodes.size();
+        }
         mAssociationEpisodes.push_back(episodeMap(episode));
     }
-    if (result->empty()) {
+    if (episodes.empty()) {
         mNoticeMessage = QStringLiteral("该条目没有可关联章节");
+    }
+    else if (focusEpisodeNumber && mAssociationEpisodeFocusIndex < 0) {
+        mNoticeMessage = QStringLiteral(
+            "已跳到预计页面；该条目的章节排序包含特别篇，请按页查找相邻章节");
+    }
+    else {
+        mNoticeMessage.clear();
     }
     emit associationChanged();
     emit stateChanged();
@@ -625,6 +941,179 @@ auto LibraryViewModel::play(SourceItemId item, std::uint64_t generation)
     emit stateChanged();
 }
 
+auto LibraryViewModel::createMetadata(
+    SourceItemId item, LocalSubjectMetadata metadata,
+    std::uint64_t generation) -> ilias::Task<void> {
+    if (!mCustomMetadataCreator) {
+        if (!mDestroying && generation == mGeneration) {
+            mAssociating = false;
+            mErrorMessage = QStringLiteral("本地自定义元数据服务未配置");
+            emit stateChanged();
+        }
+        co_return;
+    }
+    auto created = co_await mCustomMetadataCreator(item, std::move(metadata));
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    if (!created) {
+        mAssociating = false;
+        mErrorMessage = created.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    auto loaded = co_await reloadMedia();
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    mAssociating = false;
+    if (!loaded) {
+        mErrorMessage = loaded.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    applyMedia(*loaded);
+    mSubjectResults.clear();
+    mAssociationSubjects.clear();
+    mAssociationEpisodes.clear();
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("自定义条目已保存到本地数据库并完成关联");
+    emit associationChanged();
+    emit mediaChanged();
+    emit localMetadataSaved(created->value);
+    emit stateChanged();
+}
+
+auto LibraryViewModel::loadLocalMetadataEditor(
+    SubjectId subject, std::uint64_t generation) -> ilias::Task<void> {
+    if (!mLocalMetadataLoader) {
+        if (!mDestroying && generation == mGeneration) {
+            mAssociating = false;
+            mErrorMessage = QStringLiteral("本地元数据编辑服务未配置");
+            emit stateChanged();
+        }
+        co_return;
+    }
+    auto loaded = co_await mLocalMetadataLoader(subject);
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    mAssociating = false;
+    if (!loaded) {
+        mErrorMessage = loaded.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    if (!*loaded) {
+        mErrorMessage = QStringLiteral("本地数据库中没有这个元数据条目");
+        emit stateChanged();
+        co_return;
+    }
+    const auto &stored = **loaded;
+    mLocalMetadataEditor = {
+        {QStringLiteral("subjectId"),
+         QVariant::fromValue(stored.subjectId.value)},
+        {QStringLiteral("displayTitle"), stored.metadata.displayTitle},
+        {QStringLiteral("originalTitle"), stored.metadata.originalTitle},
+        {QStringLiteral("summary"), stored.metadata.summary},
+        {QStringLiteral("coverUrl"),
+         stored.metadata.coverUrl ? stored.metadata.coverUrl->toString()
+                                  : QString {}},
+        {QStringLiteral("episodeTitle"), stored.metadata.episodeTitle},
+        {QStringLiteral("episodeNumber"),
+         stored.metadata.episodeNumber
+             ? QString::number(*stored.metadata.episodeNumber, 'g', 8)
+             : QString {}},
+    };
+    mErrorMessage.clear();
+    mNoticeMessage.clear();
+    emit localMetadataEditorChanged();
+    emit stateChanged();
+}
+
+auto LibraryViewModel::updateMetadata(
+    SubjectId subject, LocalSubjectMetadata metadata,
+    std::uint64_t generation) -> ilias::Task<void> {
+    if (!mLocalMetadataUpdater) {
+        if (!mDestroying && generation == mGeneration) {
+            mAssociating = false;
+            mErrorMessage = QStringLiteral("本地元数据编辑服务未配置");
+            emit stateChanged();
+        }
+        co_return;
+    }
+    auto updated =
+        co_await mLocalMetadataUpdater(subject, std::move(metadata));
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    if (!updated) {
+        mAssociating = false;
+        mErrorMessage = updated.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    auto loaded = co_await reloadMedia();
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    mAssociating = false;
+    if (!loaded) {
+        mErrorMessage = loaded.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    applyMedia(*loaded);
+    mLocalMetadataEditor.clear();
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("本地元数据已更新");
+    emit localMetadataEditorChanged();
+    emit mediaChanged();
+    emit localMetadataSaved(subject.value);
+    emit stateChanged();
+}
+
+auto LibraryViewModel::removeLocalMetadata(
+    SubjectId subject, std::uint64_t generation) -> ilias::Task<void> {
+    if (!mLocalMetadataRemover) {
+        if (!mDestroying && generation == mGeneration) {
+            mAssociating = false;
+            mErrorMessage = QStringLiteral("本地元数据删除服务未配置");
+            emit stateChanged();
+        }
+        co_return;
+    }
+    auto removed = co_await mLocalMetadataRemover(subject);
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    if (!removed) {
+        mAssociating = false;
+        mErrorMessage = removed.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    auto loaded = co_await reloadMedia();
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    mAssociating = false;
+    if (!loaded) {
+        mErrorMessage = loaded.error().message;
+        emit stateChanged();
+        co_return;
+    }
+    applyMedia(*loaded);
+    mLocalMetadataEditor.clear();
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral(
+        "本地元数据条目已删除；视频文件仍保留在媒体库中");
+    emit localMetadataEditorChanged();
+    emit mediaChanged();
+    emit localMetadataDeleted(subject.value);
+    emit stateChanged();
+}
+
 void LibraryViewModel::applyMedia(
     const std::vector<LibraryMediaEntry> &entries) {
     QVariantList items;
@@ -653,6 +1142,7 @@ void LibraryViewModel::applyMedia(
                 subjects.push_back({
                     .subjectId = subjectId,
                     .title = association.subjectTitle,
+                    .coverUrl = association.subjectCoverUrl,
                     .episodeIndices = {},
                     .episodes = {},
                     .mediaIds = {},
@@ -660,6 +1150,10 @@ void LibraryViewModel::applyMedia(
             }
 
             auto &subject = subjects[static_cast<std::size_t>(subjectIndex)];
+            if (subject.coverUrl.isEmpty()
+                && !association.subjectCoverUrl.isEmpty()) {
+                subject.coverUrl = association.subjectCoverUrl;
+            }
             subject.mediaIds.insert(entry.media.item.id.value);
             const qlonglong episodeId = association.episodeId.value;
             qsizetype episodeIndex =
@@ -735,6 +1229,16 @@ void LibraryViewModel::applyMedia(
         subjectGroups.push_back(QVariantMap {
             {QStringLiteral("subjectId"), subject.subjectId},
             {QStringLiteral("title"), subject.title},
+            {QStringLiteral("coverUrl"), subject.coverUrl},
+            {QStringLiteral("color"),
+             QString::fromLatin1(kMediaColors[static_cast<std::size_t>(
+                 subject.subjectId
+                 % static_cast<qlonglong>(kMediaColors.size()))])},
+            {QStringLiteral("status"), QStringLiteral("本地媒体")},
+            {QStringLiteral("meta"),
+             QStringLiteral("%1 个章节 · %2 个文件")
+                 .arg(episodeGroups.size())
+                 .arg(subject.mediaIds.size())},
             {QStringLiteral("episodeCount"), episodeGroups.size()},
             {QStringLiteral("mediaCount"), subject.mediaIds.size()},
             {QStringLiteral("episodes"), std::move(episodeGroups)},

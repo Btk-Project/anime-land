@@ -152,6 +152,39 @@ TEST(SubjectDetailsViewModel, ResolvesBangumiIdentityBeforeDatabaseLoad) {
               21);
 }
 
+TEST(SubjectDetailsViewModel, LoadsDatabaseBeforeRefreshingBangumi) {
+    std::vector<QString> operations;
+    SubjectDetailsViewModel viewModel(
+        [&operations](SubjectId subject)
+            -> ilias::Task<
+                LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            operations.push_back(QStringLiteral("load:%1").arg(subject.value));
+            co_return std::optional<SubjectLibraryDetails> {sampleDetails()};
+        },
+        [&operations](std::int64_t bangumiId)
+            -> ilias::Task<LibraryResult<SubjectId>> {
+            operations.push_back(
+                QStringLiteral("refresh:%1").arg(bangumiId));
+            co_return SubjectId {21};
+        },
+        {}, nullptr,
+        [&operations](std::int64_t bangumiId)
+            -> ilias::Task<LibraryResult<std::optional<SubjectId>>> {
+            operations.push_back(QStringLiteral("find:%1").arg(bangumiId));
+            co_return std::optional<SubjectId> {SubjectId {21}};
+        });
+
+    viewModel.openBangumiSubject(400602);
+    processUntilSettled(viewModel);
+
+    EXPECT_TRUE(viewModel.hasSubject());
+    ASSERT_EQ(operations.size(), 4U);
+    EXPECT_EQ(operations[0], QStringLiteral("find:400602"));
+    EXPECT_EQ(operations[1], QStringLiteral("load:21"));
+    EXPECT_EQ(operations[2], QStringLiteral("refresh:400602"));
+    EXPECT_EQ(operations[3], QStringLiteral("load:21"));
+}
+
 TEST(SubjectDetailsViewModel, ReportsRemoteCatalogSyncFailure) {
     SubjectDetailsViewModel viewModel(
         SubjectDetailsViewModel::DetailsLoader {}, [](std::int64_t)
@@ -214,10 +247,11 @@ TEST(SubjectDetailsViewModel, PlaysFirstLinkedEpisodeByLocalIdentity) {
               QStringLiteral("已交给系统默认播放器打开"));
 }
 
-TEST(SubjectDetailsViewModel, LoadsLargeEpisodeListsInPagesOfTwentyFour) {
+TEST(SubjectDetailsViewModel,
+     PagesAndReversesLargeEpisodeListsWithoutAppending) {
     std::vector<int> offsets;
     SubjectDetailsViewModel viewModel(
-        [&offsets](SubjectId, int limit, int offset)
+        [&offsets](SubjectId, int limit, int offset, bool descending)
             -> ilias::Task<
                 LibraryResult<std::optional<SubjectLibraryDetails>>> {
             EXPECT_EQ(limit, 24);
@@ -229,9 +263,11 @@ TEST(SubjectDetailsViewModel, LoadsLargeEpisodeListsInPagesOfTwentyFour) {
             const int count = std::min(limit, 50 - offset);
             for (int index = 0; index < count; ++index) {
                 auto episode = sampleDetails().episodes.front();
-                episode.episode.id = EpisodeId {100 + offset + index};
-                episode.episode.sortOrder = offset + index;
-                episode.episode.episodeNumber = offset + index + 1.0;
+                const int number = descending ? 50 - offset - index
+                                              : offset + index + 1;
+                episode.episode.id = EpisodeId {100 + number};
+                episode.episode.sortOrder = number - 1;
+                episode.episode.episodeNumber = number;
                 episode.media.clear();
                 details.episodes.push_back(std::move(episode));
             }
@@ -244,18 +280,38 @@ TEST(SubjectDetailsViewModel, LoadsLargeEpisodeListsInPagesOfTwentyFour) {
 
     EXPECT_EQ(viewModel.episodes().size(), 24);
     EXPECT_EQ(viewModel.totalEpisodeCount(), 50);
+    EXPECT_EQ(viewModel.currentEpisodePage(), 1);
+    EXPECT_EQ(viewModel.episodePageCount(), 3);
     EXPECT_TRUE(viewModel.hasMoreEpisodes());
 
-    viewModel.loadMoreEpisodes();
+    viewModel.nextEpisodePage();
     processUntilSettled(viewModel);
-    EXPECT_EQ(viewModel.episodes().size(), 48);
+    EXPECT_EQ(viewModel.episodes().size(), 24);
+    EXPECT_EQ(viewModel.currentEpisodePage(), 2);
     EXPECT_TRUE(viewModel.hasMoreEpisodes());
 
-    viewModel.loadMoreEpisodes();
+    viewModel.goToEpisodePage(3);
     processUntilSettled(viewModel);
-    EXPECT_EQ(viewModel.episodes().size(), 50);
+    EXPECT_EQ(viewModel.episodes().size(), 2);
+    EXPECT_EQ(viewModel.currentEpisodePage(), 3);
     EXPECT_FALSE(viewModel.hasMoreEpisodes());
-    EXPECT_EQ(offsets, (std::vector<int> {0, 24, 48}));
+
+    viewModel.setEpisodeSortDescending(true);
+    processUntilSettled(viewModel);
+    EXPECT_TRUE(viewModel.episodeSortDescending());
+    EXPECT_EQ(viewModel.currentEpisodePage(), 1);
+    ASSERT_EQ(viewModel.episodes().size(), 24);
+    EXPECT_EQ(viewModel.episodes().front().toMap()
+                  .value(QStringLiteral("number")).toString(),
+              QStringLiteral("EP50"));
+
+    viewModel.goToEpisodePage(3);
+    processUntilSettled(viewModel);
+    ASSERT_EQ(viewModel.episodes().size(), 2);
+    EXPECT_EQ(viewModel.episodes().front().toMap()
+                  .value(QStringLiteral("number")).toString(),
+              QStringLiteral("EP2"));
+    EXPECT_EQ(offsets, (std::vector<int> {0, 24, 48, 0, 48}));
 }
 
 #define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \

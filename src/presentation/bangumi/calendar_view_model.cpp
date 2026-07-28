@@ -46,9 +46,11 @@ auto calendarSubjectMap(const BangumiCalendarSubject &subject,
                                    .arg(subject.airDate, typeLabel);
     QString coverUrl;
     if (subject.images) {
-        coverUrl = !subject.images->medium.isEmpty()
-                       ? subject.images->medium
-                       : subject.images->common;
+        coverUrl = !subject.images->large.isEmpty()
+                       ? subject.images->large
+                       : !subject.images->common.isEmpty()
+                             ? subject.images->common
+                             : subject.images->medium;
     }
 
     QVariantMap value;

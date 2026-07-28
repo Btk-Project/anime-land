@@ -6,24 +6,33 @@ Item {
     id: root
 
     signal openSubject(var subject)
-    signal playRequested(var subject)
     signal calendarRequested()
+    signal libraryRequested()
 
-    readonly property var featured: FixtureData.subjects[0]
-    readonly property var fixtureTodayCalendar:
-        FixtureData.calendarDay(FixtureData.currentWeekdayId())
-    readonly property var todayItems: uiFixtureMode
-        ? fixtureTodayCalendar.items.slice(0, 3)
-        : calendarViewModel.todayItems
-    readonly property int todayItemCount: uiFixtureMode
-        ? fixtureTodayCalendar.items.length
-        : calendarViewModel.todayItemCount
-    readonly property string todayLabel: uiFixtureMode
-        ? fixtureTodayCalendar.label : calendarViewModel.todayLabel
+    readonly property var todayItems:
+        !uiFixtureMode && calendarViewModel
+        ? calendarViewModel.todayItems.slice(0, 3) : []
+    readonly property int todayItemCount:
+        !uiFixtureMode && calendarViewModel
+        ? calendarViewModel.todayItemCount : 0
+    readonly property string todayLabel:
+        !uiFixtureMode && calendarViewModel
+        ? calendarViewModel.todayLabel : ""
     readonly property bool calendarLoading:
-        !uiFixtureMode && calendarViewModel.loading
-    readonly property string calendarError: uiFixtureMode
-        ? "" : calendarViewModel.errorMessage
+        !uiFixtureMode && calendarViewModel && calendarViewModel.loading
+    readonly property string calendarError:
+        !uiFixtureMode && calendarViewModel
+        ? calendarViewModel.errorMessage : ""
+    readonly property var featured:
+        todayItems.length > 0 ? todayItems[0] : null
+    readonly property var librarySubjects:
+        !uiFixtureMode && libraryViewModel
+        ? libraryViewModel.subjectGroups : []
+    readonly property bool libraryLoading:
+        !uiFixtureMode && libraryViewModel && libraryViewModel.loading
+    readonly property string libraryError:
+        !uiFixtureMode && libraryViewModel
+        ? libraryViewModel.errorMessage : ""
 
     Flickable {
         anchors.fill: parent
@@ -42,12 +51,13 @@ Item {
             PageHeader {
                 width: parent.width
                 title: "首页"
-                subtitle: "继续上次的进度，或从媒体库挑一部动画。"
+                subtitle: "查看今日放送与已经关联的本地媒体。"
             }
 
             Rectangle {
                 width: parent.width
-                height: 226
+                height: visible ? 226 : 0
+                visible: root.featured !== null
                 radius: Theme.radiusLarge
                 color: Theme.surface
                 border.width: 1
@@ -64,7 +74,7 @@ Item {
                         spacing: 10
 
                         AppText {
-                            text: "继续观看"
+                            text: "今日焦点"
                             color: Theme.textMuted
                             font.pixelSize: Theme.captionSize
                             font.weight: Font.DemiBold
@@ -72,7 +82,7 @@ Item {
 
                         AppText {
                             width: parent.width
-                            text: root.featured.title
+                            text: root.featured ? root.featured.title : ""
                             color: Theme.text
                             font.pixelSize: 28
                             font.weight: Font.DemiBold
@@ -81,68 +91,51 @@ Item {
 
                         AppText {
                             width: parent.width
-                            text: root.featured.episode
+                            text: root.featured
+                                  ? (root.featured.subtitle
+                                     || root.featured.meta || "") : ""
                             color: Theme.textMuted
                             font.pixelSize: Theme.bodySize
                             elide: Text.ElideRight
                         }
 
-                        Rectangle {
-                            width: Math.min(420, parent.width)
-                            height: 4
-                            radius: 2
-                            color: Theme.border
-
-                            Rectangle {
-                                width: parent.width * root.featured.progress
-                                height: parent.height
-                                radius: parent.radius
-                                color: Theme.accent
-                            }
+                        AppText {
+                            width: parent.width
+                            text: root.featured
+                                  ? (root.featured.summary || "暂无简介") : ""
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.captionSize
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            wrapMode: Text.WordWrap
                         }
 
                         Row {
                             spacing: 10
 
                             AppButton {
-                                text: "继续播放"
+                                text: "查看详情"
                                 primary: true
-                                onClicked: root.playRequested(root.featured)
+                                onClicked: root.openSubject(root.featured)
                             }
 
                             AppButton {
-                                text: "查看详情"
-                                onClicked: root.openSubject(root.featured)
+                                text: "完整放送表"
+                                onClicked: root.calendarRequested()
                             }
                         }
                     }
 
-                    Rectangle {
-                        Layout.preferredWidth: 250
+                    CoverImage {
+                        Layout.preferredWidth: 126
                         Layout.fillHeight: true
-                        radius: Theme.radius
-                        color: root.featured.color
-
-                        AppText {
-                            anchors.centerIn: parent
-                            text: root.featured.title.slice(0, 1)
-                            color: "#e2e5e7"
-                            opacity: 0.74
-                            font.pixelSize: 76
-                            font.weight: Font.Light
-                        }
-
-                        AppText {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            anchors.margins: 16
-                            text: root.featured.subtitle
-                            color: Theme.text
-                            font.pixelSize: Theme.captionSize
-                            horizontalAlignment: Text.AlignHCenter
-                            elide: Text.ElideRight
-                        }
+                        source: root.featured
+                                ? (root.featured.coverUrl || "") : ""
+                        title: root.featured ? root.featured.title : ""
+                        fallbackColor: root.featured
+                                       ? (root.featured.color
+                                          || Theme.surfaceRaised)
+                                       : Theme.surfaceRaised
                     }
                 }
             }
@@ -154,7 +147,9 @@ Item {
                     ? "正在加载"
                     : root.calendarError.length > 0
                       ? "加载失败"
-                      : root.todayLabel + " · " + root.todayItemCount + " 部"
+                      : root.todayLabel.length > 0
+                        ? root.todayLabel + " · " + root.todayItemCount + " 部"
+                        : "尚未连接数据源"
             }
 
             Rectangle {
@@ -183,14 +178,16 @@ Item {
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 11
+                                anchors.margins: 8
+                                spacing: 10
 
-                                Rectangle {
-                                    Layout.preferredWidth: 40
+                                CoverImage {
+                                    Layout.preferredWidth: 52
                                     Layout.fillHeight: true
-                                    radius: 4
-                                    color: modelData.color
+                                    source: modelData.coverUrl || ""
+                                    title: modelData.title || ""
+                                    fallbackColor: modelData.color
+                                                   || Theme.surfaceRaised
                                 }
 
                                 Column {
@@ -251,17 +248,22 @@ Item {
 
             SectionHeader {
                 width: parent.width
-                title: "最近加入"
-                detail: "fixture 数据"
+                title: "本地媒体库"
+                detail: root.libraryLoading
+                        ? "正在读取"
+                        : root.libraryError.length > 0
+                          ? "读取失败"
+                          : root.librarySubjects.length + " 个已关联条目"
             }
 
             Flow {
                 width: parent.width
-                height: childrenRect.height
+                height: visible ? childrenRect.height : 0
+                visible: root.librarySubjects.length > 0
                 spacing: 16
 
                 Repeater {
-                    model: FixtureData.subjects.slice(1, 6)
+                    model: root.librarySubjects.slice(0, 6)
 
                     SubjectCard {
                         subject: modelData
@@ -270,15 +272,10 @@ Item {
                 }
             }
 
-            SectionHeader {
-                width: parent.width
-                title: "最近播放"
-                detail: "3 条记录"
-            }
-
             Rectangle {
                 width: parent.width
-                height: 96
+                height: visible ? 118 : 0
+                visible: root.librarySubjects.length === 0
                 radius: Theme.radius
                 color: Theme.surface
                 border.width: 1
@@ -286,54 +283,42 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
+                    anchors.margins: 18
+                    spacing: 16
 
-                    Repeater {
-                        model: FixtureData.subjects.slice(0, 3)
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 7
 
-                        Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            radius: Theme.radiusSmall
-                            color: Theme.surfaceRaised
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 12
-
-                                Rectangle {
-                                    Layout.preferredWidth: 42
-                                    Layout.fillHeight: true
-                                    radius: 4
-                                    color: modelData.color
-                                }
-
-                                Column {
-                                    Layout.fillWidth: true
-                                    spacing: 5
-
-                                    AppText {
-                                        width: parent.width
-                                        text: modelData.title
-                                        color: Theme.text
-                                        font.pixelSize: Theme.bodySize
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-
-                                    AppText {
-                                        width: parent.width
-                                        text: modelData.episode
-                                        color: Theme.textMuted
-                                        font.pixelSize: Theme.captionSize
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                            }
+                        AppText {
+                            width: parent.width
+                            text: root.libraryLoading
+                                  ? "正在读取本地媒体库……"
+                                  : root.libraryError.length > 0
+                                    ? root.libraryError
+                                    : "还没有已关联的本地条目"
+                            color: root.libraryError.length > 0
+                                   ? Theme.danger : Theme.text
+                            font.pixelSize: Theme.bodySize
+                            font.weight: Font.DemiBold
+                            wrapMode: Text.Wrap
                         }
+
+                        AppText {
+                            width: parent.width
+                            visible: !root.libraryLoading
+                                     && root.libraryError.length === 0
+                            text: "导入媒体并关联 Bangumi 条目后，会在这里显示。"
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.captionSize
+                        }
+                    }
+
+                    AppButton {
+                        visible: !root.libraryLoading
+                        text: "打开媒体库"
+                        primary: true
+                        onClicked: root.libraryRequested()
                     }
                 }
             }

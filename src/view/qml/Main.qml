@@ -5,8 +5,12 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: root
 
-    width: 1320
-    height: 820
+    width: uiAssociationSmokeTest || uiCustomMetadataSmokeTest
+           || uiSettingsSmokeTest || uiPaginationSmokeTest
+           || uiLongMetadataSmokeTest ? 960 : 1320
+    height: uiAssociationSmokeTest || uiCustomMetadataSmokeTest
+            || uiSettingsSmokeTest || uiPaginationSmokeTest
+            || uiLongMetadataSmokeTest ? 640 : 820
     minimumWidth: 960
     minimumHeight: 640
     visible: true
@@ -14,7 +18,7 @@ ApplicationWindow {
     color: Theme.background
 
     property int currentSection: 0
-    property var selectedSubject: FixtureData.subjects[0]
+    property var selectedSubject: null
     property int smokeStep: 0
 
     palette.window: Theme.background
@@ -215,8 +219,8 @@ ApplicationWindow {
         id: homeComponent
         HomePage {
             onOpenSubject: subject => root.openSubject(subject)
-            onPlayRequested: subject => root.openPlayer(subject)
             onCalendarRequested: root.showRoot(2)
+            onLibraryRequested: root.showRoot(1)
         }
     }
 
@@ -259,16 +263,26 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        root.showRoot(0)
+        root.showRoot(uiSettingsSmokeTest ? 3
+                      : uiAssociationSmokeTest || uiCustomMetadataSmokeTest
+                        ? 1 : 0)
+        if (uiPaginationSmokeTest || uiLongMetadataSmokeTest)
+            Qt.callLater(function() {
+                root.openSubject(FixtureData.subjects[0])
+            })
         if (!uiFixtureMode)
             calendarViewModel.refresh()
+        if (!uiFixtureMode && libraryViewModel)
+            libraryViewModel.refresh()
         if (!uiFixtureMode && bangumiBrowserViewModel)
             bangumiBrowserViewModel.restoreSession()
     }
 
     Timer {
         interval: 60
-        running: uiSmokeTest
+        running: uiSmokeTest && !uiAssociationSmokeTest
+                 && !uiCustomMetadataSmokeTest && !uiSettingsSmokeTest
+                 && !uiPaginationSmokeTest && !uiLongMetadataSmokeTest
         repeat: true
 
         onTriggered: {

@@ -3,8 +3,13 @@
 #include "common/app_settings.hpp"
 #include "common/log.hpp"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QStandardPaths>
+
 #include <nekoproto/serialization/toml_serializer.hpp>
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -96,6 +101,60 @@ TEST(AppLog, FallbackUsesQtLoggingAndStdFormatSyntax) {
   EXPECT_TRUE(setLogLevel("info"));
 }
 #endif
+
+TEST(AppSettings, ExpandsDocumentedApplicationVariables) {
+  EXPECT_EQ(expandVariables("plain/value"), "plain/value");
+  EXPECT_EQ(expandVariables("${APP_NAME}-${APP_VERSION}"),
+            "anime-land-tests-9.8.7");
+  EXPECT_EQ(expandVariables("before/${UNKNOWN}/after"),
+            "before/${UNKNOWN}/after");
+  EXPECT_EQ(expandVariables("unfinished/${APP_NAME"),
+            "unfinished/${APP_NAME");
+
+  const auto expectedLogDirectory =
+      QDir(QStandardPaths::writableLocation(
+               QStandardPaths::AppLocalDataLocation))
+          .filePath(QStringLiteral("logs"))
+          .toStdString();
+  EXPECT_EQ(expandVariables("${APP_LOG_DIR}"), expectedLogDirectory);
+
+  constexpr std::array<std::string_view, 13> variables {
+      "APP_INSTALL_DIR", "APP_EXEC_DIR",  "APP_CONFIG_DIR",
+      "APP_DATA_DIR",    "APP_LOG_DIR",   "APP_CACHE_DIR",
+      "APP_TEMP_DIR",    "WORK_DIR",      "USER_HOME_DIR",
+      "APP_VERSION",     "APP_NAME",      "USER_NAME",
+      "HOST_NAME",
+  };
+  for (const auto name : variables) {
+    const std::string expression = "${" + std::string(name) + "}";
+    EXPECT_EQ(expandVariables(expression).find("${"), std::string::npos)
+        << name;
+  }
+}
+
+TEST(AppLog, WritesTimestampedApplicationLogFile) {
+  const auto settingsPath = temporarySettingsPath("file-log");
+  const auto logDirectory = settingsPath.parent_path() / "logs";
+  const auto configured = configureLogging(
+      "debug", {.directory = logDirectory,
+                .maxFileSize = 1024U * 1024U,
+                .maxFileCount = 2});
+  ASSERT_TRUE(configured.success) << configured.errorMessage;
+  EXPECT_EQ(configured.filePath.parent_path(), logDirectory);
+  EXPECT_TRUE(configured.filePath.filename().string().starts_with(
+      "anime-land-tests-"));
+  EXPECT_EQ(configured.filePath.extension(), ".log");
+
+  AL_LOG_WARN("file logger unicode={}", "中文");
+  shutdownLogging();
+
+  std::ifstream input(configured.filePath, std::ios::binary);
+  ASSERT_TRUE(input.is_open());
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  EXPECT_NE(contents.find("file logger unicode=中文"), std::string::npos);
+  removeSettingsFiles(settingsPath);
+}
 
 TEST(AppSettings, Load) {
   GlobalAppSettingGuard gasguard;
@@ -194,8 +253,28 @@ TEST(AppSettings, LoadOrCreateWritesEveryDefaultField) {
   EXPECT_NE(contents.find("proxy_url"), std::string::npos);
   EXPECT_NE(contents.find("proxy_username"), std::string::npos);
   EXPECT_NE(contents.find("proxy_password"), std::string::npos);
+  EXPECT_NE(contents.find("cache_enabled"), std::string::npos);
+  EXPECT_NE(contents.find("cache_path"), std::string::npos);
+  EXPECT_NE(contents.find("cache_max_size"), std::string::npos);
+  EXPECT_NE(contents.find("cache_ttl_days"), std::string::npos);
+  EXPECT_NE(contents.find("${APP_CACHE_DIR}/bangumi"), std::string::npos);
   EXPECT_NE(contents.find("appearance_settings"), std::string::npos);
   EXPECT_NE(contents.find("theme"), std::string::npos);
+  EXPECT_NE(contents.find("general_settings"), std::string::npos);
+  EXPECT_NE(contents.find("log_level"), std::string::npos);
+  EXPECT_NE(contents.find("${APP_LOG_DIR}"), std::string::npos);
+
+  {
+    auto settings = settingsGuard.get();
+    EXPECT_EQ(settings->general_settings.log_file_path,
+              expandVariables("${APP_LOG_DIR}"));
+    EXPECT_TRUE(settings->bangumi_settings.cache_enabled);
+    EXPECT_EQ(settings->bangumi_settings.cache_path,
+              expandVariables("${APP_CACHE_DIR}/bangumi"));
+    EXPECT_EQ(settings->bangumi_settings.cache_max_size,
+              512ULL * 1024ULL * 1024ULL);
+    EXPECT_EQ(settings->bangumi_settings.cache_ttl_days, 7);
+  }
 
   const auto loaded = settingsGuard.loadOrCreate(path);
   ASSERT_TRUE(loaded);
@@ -309,5 +388,11 @@ TEST(AppSettings, EmptySerializedQUrlRepresentsAnUnsetUrl) {
   EXPECT_EQ(value.text, QStringLiteral("valid"));
   EXPECT_TRUE(value.url.isEmpty());
 }
+
+#define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                  \
+  QCoreApplication qtApplication(argc, argv);                                \
+  QCoreApplication::setOrganizationName(QStringLiteral("Btk-Project"));       \
+  QCoreApplication::setApplicationName(QStringLiteral("anime-land-tests"));  \
+  QCoreApplication::setApplicationVersion(QStringLiteral("9.8.7"));
 
 #include "common/common_main.hpp.in"

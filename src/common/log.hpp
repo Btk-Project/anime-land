@@ -2,10 +2,36 @@
 
 #include "common/config.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <string_view>
+
+namespace anime_land {
+
+struct LogFileOptions {
+  std::filesystem::path directory;
+  std::uint64_t maxFileSize = 10U * 1024U * 1024U;
+  std::size_t maxFileCount = 5;
+};
+
+struct LogConfigurationResult {
+  bool success = false;
+  std::filesystem::path filePath;
+  std::string errorMessage;
+};
+
+/** Configure console + rotating file logging for the current process. */
+auto configureLogging(std::string_view level, const LogFileOptions &options)
+    -> LogConfigurationResult;
+void shutdownLogging() noexcept;
+auto currentLogFilePath() -> std::filesystem::path;
+
+} // namespace anime_land
+
 #ifdef ANIME_LAND_USE_SPDLOG
 #include <spdlog/spdlog.h>
-
-#include <string_view>
 
 namespace anime_land {
 

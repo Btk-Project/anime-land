@@ -10,6 +10,8 @@
 
 #include <ilias/sync.hpp>
 
+#include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace anime_land {
@@ -20,6 +22,17 @@ auto validThemeMode(QStringView mode) -> bool {
            || mode == QStringLiteral("dark")
            || mode == QStringLiteral("light");
 }
+
+auto validLogLevel(QStringView level) -> bool {
+    return level == QStringLiteral("trace")
+           || level == QStringLiteral("debug")
+           || level == QStringLiteral("info")
+           || level == QStringLiteral("warn")
+           || level == QStringLiteral("error")
+           || level == QStringLiteral("critical");
+}
+
+constexpr std::uint64_t kMebibyte = 1024U * 1024U;
 
 auto darkPalette() -> QPalette {
     QPalette palette;
@@ -169,8 +182,29 @@ void ApplicationSettingsViewModel::loadSnapshot() {
     mBangumiClientId = settings->bangumi_settings.client_id;
     mRedirectUri = settings->bangumi_settings.redirect_uri.toString();
     mProxyUrl = settings->bangumi_settings.proxy_url.toString();
+    mBangumiCacheEnabled = settings->bangumi_settings.cache_enabled;
+    mBangumiCacheDirectory = QString::fromStdString(
+        settings->bangumi_settings.cache_path);
+    const std::uint64_t cacheSizeMiB =
+        settings->bangumi_settings.cache_max_size / kMebibyte;
+    mBangumiCacheMaxSizeMiB = static_cast<int>(
+        std::min<std::uint64_t>(cacheSizeMiB, 102400U));
+    mBangumiCacheTtlDays =
+        std::clamp(settings->bangumi_settings.cache_ttl_days, 1, 3650);
     mClientSecretConfigured =
         !settings->bangumi_settings.client_secret.empty();
+    mLogLevel = QString::fromStdString(settings->general_settings.log_level);
+    mLogDirectory =
+        QString::fromStdString(settings->general_settings.log_file_path);
+    const std::uint64_t sizeMiB =
+        std::max<std::uint64_t>(1, settings->general_settings.log_file_max_size
+                                      / kMebibyte);
+    mLogMaxFileSizeMiB = static_cast<int>(std::min<std::uint64_t>(
+        sizeMiB, static_cast<std::uint64_t>(std::numeric_limits<int>::max())));
+    mLogMaxFileCount =
+        std::clamp(settings->general_settings.log_file_max_count, 1, 100);
+    mActiveLogFile =
+        QString::fromStdString(currentLogFilePath().string());
 }
 
 void ApplicationSettingsViewModel::applyTheme() {
@@ -322,6 +356,11 @@ auto ApplicationSettingsViewModel::persistBangumi(
     mBangumiClientId = current.client_id;
     mRedirectUri = current.redirect_uri.toString();
     mProxyUrl = current.proxy_url.toString();
+    mBangumiCacheEnabled = current.cache_enabled;
+    mBangumiCacheDirectory = QString::fromStdString(current.cache_path);
+    mBangumiCacheMaxSizeMiB = static_cast<int>(std::min<std::uint64_t>(
+        current.cache_max_size / kMebibyte, 102400U));
+    mBangumiCacheTtlDays = std::clamp(current.cache_ttl_days, 1, 3650);
     mClientSecretConfigured = !current.client_secret.empty();
     mRestartRequired = true;
     if (mBangumiModule) {
@@ -334,6 +373,163 @@ auto ApplicationSettingsViewModel::persistBangumi(
     }
     mNoticeMessage = QStringLiteral(
         "Bangumi 设置已保存；代理等网络设置将在下次启动时生效");
+    emit settingsChanged();
+    emit stateChanged();
+}
+
+void ApplicationSettingsViewModel::saveBangumiCacheSettings(
+    bool enabled, const QString &directory, int maxSizeMiB,
+    int ttlDays) {
+    if (mSaving || mDestroying) {
+        return;
+    }
+    if (maxSizeMiB < 0 || maxSizeMiB > 102400) {
+        reportError(QStringLiteral("Bangumi 缓存大小必须在 0–102400 MiB 之间"));
+        return;
+    }
+    if (ttlDays < 1 || ttlDays > 3650) {
+        reportError(QStringLiteral("Bangumi 缓存有效期必须在 1–3650 天之间"));
+        return;
+    }
+    const QString normalizedDirectory = directory.trimmed();
+    if (enabled && maxSizeMiB > 0 && normalizedDirectory.isEmpty()) {
+        reportError(QStringLiteral("启用 Bangumi 缓存时目录不能为空"));
+        return;
+    }
+
+    BangumiSettings previous;
+    {
+        auto settings = mSettings.get();
+        previous = settings->bangumi_settings;
+    }
+    BangumiSettings updated = previous;
+    updated.cache_enabled = enabled;
+    updated.cache_path = expandVariables(normalizedDirectory.toStdString());
+    updated.cache_max_size =
+        static_cast<std::uint64_t>(maxSizeMiB) * kMebibyte;
+    updated.cache_ttl_days = ttlDays;
+
+    mSaving = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在保存 Bangumi 缓存设置…");
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(persistBangumi(std::move(previous), std::move(updated),
+                                generation));
+}
+
+void ApplicationSettingsViewModel::saveLogSettings(
+    const QString &level, const QString &directory, int maxFileSizeMiB,
+    int maxFileCount) {
+    if (mSaving || mDestroying) {
+        return;
+    }
+
+    const QString normalizedLevel = level.trimmed().toLower();
+    if (!validLogLevel(normalizedLevel)) {
+        reportError(QStringLiteral("日志级别无效"));
+        return;
+    }
+    const QString normalizedDirectory = directory.trimmed();
+    if (normalizedDirectory.isEmpty()) {
+        reportError(QStringLiteral("日志目录不能为空"));
+        return;
+    }
+    if (maxFileSizeMiB < 1 || maxFileSizeMiB > 1024) {
+        reportError(QStringLiteral("单个日志文件大小必须在 1–1024 MiB 之间"));
+        return;
+    }
+    if (maxFileCount < 1 || maxFileCount > 100) {
+        reportError(QStringLiteral("日志文件数量必须在 1–100 之间"));
+        return;
+    }
+
+    GeneralSettings previous;
+    {
+        auto settings = mSettings.get();
+        previous = settings->general_settings;
+    }
+    GeneralSettings updated = previous;
+    updated.log_level = normalizedLevel.toStdString();
+    updated.log_file_path =
+        expandVariables(normalizedDirectory.toStdString());
+    updated.log_file_max_size =
+        static_cast<std::uint64_t>(maxFileSizeMiB) * kMebibyte;
+    updated.log_file_max_count = maxFileCount;
+
+    mSaving = true;
+    mErrorMessage.clear();
+    mNoticeMessage = QStringLiteral("正在保存日志设置…");
+    const auto generation = ++mGeneration;
+    emit stateChanged();
+    mTasks.spawn(persistLog(std::move(previous), std::move(updated),
+                            generation));
+}
+
+auto ApplicationSettingsViewModel::persistLog(
+    GeneralSettings previous, GeneralSettings updated,
+    std::uint64_t generation) -> ilias::Task<void> {
+    struct Result {
+        bool saved = false;
+        std::string error;
+        std::filesystem::path filePath;
+    };
+    Result result = co_await ilias::blocking(
+        [this, previous, updated]() mutable {
+            const LogFileOptions newOptions {
+                .directory = updated.log_file_path,
+                .maxFileSize = updated.log_file_max_size,
+                .maxFileCount =
+                    static_cast<std::size_t>(updated.log_file_max_count),
+            };
+            auto configured = configureLogging(updated.log_level, newOptions);
+            if (!configured.success) {
+                return Result {
+                    .saved = false,
+                    .error = std::move(configured.errorMessage),
+                    .filePath = {},
+                };
+            }
+
+            {
+                auto settings = mSettings.get();
+                settings->general_settings = updated;
+            }
+            if (mSettings.save(mSettingsPath)) {
+                return Result {.saved = true,
+                               .error = {},
+                               .filePath = std::move(configured.filePath)};
+            }
+
+            {
+                auto settings = mSettings.get();
+                settings->general_settings = previous;
+            }
+            static_cast<void>(configureLogging(
+                previous.log_level,
+                {.directory = previous.log_file_path,
+                 .maxFileSize = previous.log_file_max_size,
+                 .maxFileCount = static_cast<std::size_t>(
+                     std::max(1, previous.log_file_max_count))}));
+            return Result {
+                .saved = false,
+                .error = "cannot save application settings",
+                .filePath = {},
+            };
+        });
+    if (mDestroying || generation != mGeneration) {
+        co_return;
+    }
+    mSaving = false;
+    if (!result.saved) {
+        reportError(QStringLiteral("无法应用日志设置：%1")
+                        .arg(QString::fromStdString(result.error)));
+        co_return;
+    }
+
+    loadSnapshot();
+    mActiveLogFile = QString::fromStdString(result.filePath.string());
+    mNoticeMessage = QStringLiteral("日志设置已保存并立即生效");
     emit settingsChanged();
     emit stateChanged();
 }

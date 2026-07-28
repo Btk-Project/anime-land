@@ -439,18 +439,25 @@ auto upsertEpisodeMediaLink(LocalDatabase &database,
         co_return *stored;
     }
 
-    ILIAS_CO_TRYV(
-        co_await links.upsert()
-            .values(
-                links.sql(&EpisodeMediaLinkRecord::episodeId) = link.episodeId.value,
-                links.sql(&EpisodeMediaLinkRecord::sourceItemId) = link.sourceItemId.value,
-                links.sql(&EpisodeMediaLinkRecord::kind) = static_cast<std::int64_t>(link.kind),
-                links.sql(&EpisodeMediaLinkRecord::updatedAt) = link.updatedAt.toMSecsSinceEpoch())
-            .onConflict(links.sql(&EpisodeMediaLinkRecord::episodeId),
-                        links.sql(&EpisodeMediaLinkRecord::sourceItemId))
-            .updateExcluded(links.sql(&EpisodeMediaLinkRecord::kind),
-                            links.sql(&EpisodeMediaLinkRecord::updatedAt))
-            .execute());
+    EpisodeMediaLinkRecord replacement {
+        .episodeId = link.episodeId.value,
+        .sourceItemId = link.sourceItemId.value,
+        .kind = static_cast<std::int64_t>(link.kind),
+        .updatedAt = link.updatedAt.toMSecsSinceEpoch(),
+    };
+    if (existing) {
+        ILIAS_CO_TRYV(
+            co_await links.update()
+                .set(
+                    links.sql(&EpisodeMediaLinkRecord::kind) = replacement.kind,
+                    links.sql(&EpisodeMediaLinkRecord::updatedAt) = replacement.updatedAt)
+                .where(
+                    links.sql(&EpisodeMediaLinkRecord::episodeId) == replacement.episodeId && links.sql(&EpisodeMediaLinkRecord::sourceItemId) == replacement.sourceItemId)
+                .execute());
+    }
+    else {
+        ILIAS_CO_TRYV(co_await links.insert().set(replacement).execute());
+    }
     ILIAS_CO_TRY(
         auto storedRow,
         co_await findEpisodeMediaLinkRow(

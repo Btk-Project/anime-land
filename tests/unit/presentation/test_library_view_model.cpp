@@ -11,7 +11,10 @@
 
 #include "presentation/library/library_view_model.hpp"
 
+#include <algorithm>
 #include <memory>
+#include <utility>
+#include <vector>
 
 using namespace anime_land;
 
@@ -131,6 +134,7 @@ TEST(LibraryViewModel, MapsPersistedEpisodeAssociationToMediaCard) {
                     .subjectTitle = QStringLiteral("葬送的芙莉莲"),
                     .episodeTitle = QStringLiteral("冒险的终点"),
                     .episodeNumber = 1.0,
+                    .subjectCoverUrl = QStringLiteral("large-cover"),
                 }},
             }};
         });
@@ -161,6 +165,8 @@ TEST(LibraryViewModel, MapsPersistedEpisodeAssociationToMediaCard) {
               QStringLiteral("葬送的芙莉莲"));
     EXPECT_EQ(subject.value(QStringLiteral("episodeCount")).toInt(), 1);
     EXPECT_EQ(subject.value(QStringLiteral("mediaCount")).toInt(), 1);
+    EXPECT_EQ(subject.value(QStringLiteral("coverUrl")).toString(),
+              QStringLiteral("large-cover"));
     const auto episodeGroups =
         subject.value(QStringLiteral("episodes")).toList();
     ASSERT_EQ(episodeGroups.size(), 1);
@@ -370,6 +376,102 @@ QtObject {
     EXPECT_EQ(received.front(),
               QUrl(QStringLiteral(
                   "file:///D:/Videos/%5BLoliHouse%5D%20Episode%20-%2001.mkv")));
+}
+
+TEST(LibraryViewModel,
+     PagesRemoteAssociationEpisodesAndLocatesLargeEpisodeNumbers) {
+    constexpr int totalEpisodes = 3200;
+    std::vector<std::pair<int, int>> requests;
+    LibraryViewModel::SubjectSearcher searcher =
+        [](QString query)
+        -> ilias::Task<LibraryResult<std::vector<BangumiSearchSubject>>> {
+        EXPECT_EQ(query, QStringLiteral("名侦探柯南"));
+        co_return std::vector<BangumiSearchSubject> {{
+            .id = 9784,
+            .type = BangumiSubjectType::Anime,
+            .name = QStringLiteral("Detective Conan"),
+            .nameCn = QStringLiteral("名侦探柯南"),
+            .episodes = totalEpisodes,
+            .totalEpisodes = totalEpisodes,
+        }};
+    };
+    LibraryViewModel::EpisodeLoader episodeLoader =
+        [&requests, totalEpisodes](const BangumiSearchSubject &subject,
+                                   int limit, int offset)
+        -> ilias::Task<LibraryResult<AssociationEpisodePage>> {
+        EXPECT_EQ(subject.id, 9784);
+        requests.emplace_back(limit, offset);
+        std::vector<AssociationEpisodeOption> episodes;
+        const int end = std::min(totalEpisodes, offset + limit);
+        for (int index = offset; index < end; ++index) {
+            const int number = index + 1;
+            episodes.push_back({
+                .id = EpisodeId {number},
+                .title = QStringLiteral("章节 %1").arg(number),
+                .displayNumber = QStringLiteral("EP%1").arg(number),
+                .episodeNumber = static_cast<double>(number),
+                .episodeType = 0,
+            });
+        }
+        co_return AssociationEpisodePage {
+            .episodes = std::move(episodes),
+            .total = totalEpisodes,
+            .limit = limit,
+            .offset = offset,
+        };
+    };
+    LibraryViewModel viewModel(std::move(searcher),
+                               std::move(episodeLoader));
+
+    viewModel.searchAssociationSubjects(QStringLiteral("名侦探柯南"));
+    processUntilSettled(viewModel);
+    ASSERT_EQ(viewModel.associationSubjects().size(), 1);
+
+    viewModel.selectAssociationSubject(9784);
+    processUntilSettled(viewModel);
+    ASSERT_EQ(requests.size(), 1U);
+    EXPECT_EQ(requests.back(), std::make_pair(24, 0));
+    EXPECT_EQ(viewModel.associationEpisodeTotal(), totalEpisodes);
+    EXPECT_EQ(viewModel.associationEpisodePageCount(), 134);
+    EXPECT_EQ(viewModel.associationEpisodePage(), 1);
+
+    viewModel.locateAssociationEpisode(QStringLiteral("EP500"));
+    processUntilSettled(viewModel);
+    ASSERT_EQ(requests.size(), 2U);
+    EXPECT_EQ(requests.back(), std::make_pair(24, 480));
+    EXPECT_EQ(viewModel.associationEpisodePage(), 21);
+    EXPECT_EQ(viewModel.associationEpisodeFocusIndex(), 19);
+    ASSERT_EQ(viewModel.associationEpisodes().size(), 24);
+    EXPECT_EQ(viewModel.associationEpisodes()
+                  .at(viewModel.associationEpisodeFocusIndex())
+                  .toMap()
+                  .value(QStringLiteral("number"))
+                  .toString(),
+              QStringLiteral("EP500"));
+
+    viewModel.setAssociationEpisodeDescending(true);
+    processUntilSettled(viewModel);
+    ASSERT_EQ(requests.size(), 3U);
+    EXPECT_EQ(requests.back(), std::make_pair(24, 3176));
+    EXPECT_TRUE(viewModel.associationEpisodeDescending());
+    EXPECT_EQ(viewModel.associationEpisodes()
+                  .front()
+                  .toMap()
+                  .value(QStringLiteral("number"))
+                  .toString(),
+              QStringLiteral("EP3200"));
+
+    viewModel.nextAssociationEpisodePage();
+    processUntilSettled(viewModel);
+    ASSERT_EQ(requests.size(), 4U);
+    EXPECT_EQ(requests.back(), std::make_pair(24, 3152));
+    EXPECT_EQ(viewModel.associationEpisodePage(), 2);
+    EXPECT_EQ(viewModel.associationEpisodes()
+                  .front()
+                  .toMap()
+                  .value(QStringLiteral("number"))
+                  .toString(),
+              QStringLiteral("EP3176"));
 }
 
 #define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \

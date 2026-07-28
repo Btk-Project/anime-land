@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    property var subject: FixtureData.subjects[0]
+    property var subject: uiFixtureMode ? FixtureData.subjects[0] : ({})
     signal backRequested()
 
     Rectangle {

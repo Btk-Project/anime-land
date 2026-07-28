@@ -2,6 +2,7 @@
 
 #include "model/bangumi/bangumi.hpp"
 #include "model/bangumi/network_proxy.hpp"
+#include "model/bangumi/network_cache.hpp"
 #include "common/log.hpp"
 
 #include <QDateTime>
@@ -39,6 +40,9 @@ BangumiModule::BangumiModule(BangumiSettings settings, std::unique_ptr<TokenStor
       mNetwork(this), mAuth(mNetwork, mSettings, this),
       mClient(mNetwork, mSettings, this) {
     Q_ASSERT(mTokenStore != nullptr);
+    installBangumiNetworkCache(
+        mNetwork, bangumiNetworkCacheOptions(mSettings),
+        NetworkCachePartition::Api);
     auto proxyConfigured = detail::configureBangumiNetworkProxy(mNetwork, mSettings);
     if (!proxyConfigured) {
         mNetworkConfigurationError = std::move(proxyConfigured.error());

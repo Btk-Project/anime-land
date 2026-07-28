@@ -161,6 +161,17 @@ TEST(BangumiCliOptions, ParsesProxyAndLogLevelForEveryCommand) {
   EXPECT_EQ(*common.logLevel, "debug");
 }
 
+TEST(BangumiCliOptions, LeavesLogLevelUnsetWithoutAnExplicitOverride) {
+  const char *argv[] = {"anime-land", "status"};
+
+  auto result = argparser::parser<AnimeLandCommands>(
+      static_cast<int>(std::size(argv)), argv);
+
+  ASSERT_TRUE(result) << result.error().message();
+  ASSERT_TRUE(std::holds_alternative<StatusCommand>(*result));
+  EXPECT_FALSE(std::get<StatusCommand>(*result).common.logLevel);
+}
+
 TEST(BangumiCliOptions, RejectsUnknownLogLevel) {
   const char *argv[] = {"anime-land", "login", "--log-level", "verbose"};
 

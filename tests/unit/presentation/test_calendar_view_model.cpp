@@ -111,7 +111,7 @@ TEST(BangumiCalendarViewModel, MapsValidatedCalendarToQmlState) {
   EXPECT_EQ(subject.value(QStringLiteral("score")).toString(),
             QStringLiteral("8.8"));
   EXPECT_EQ(subject.value(QStringLiteral("coverUrl")).toString(),
-            QStringLiteral("medium"));
+            QStringLiteral("large"));
   EXPECT_EQ(subject.value(QStringLiteral("doingCount")).toInt(), 300);
 }
 

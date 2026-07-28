@@ -14,6 +14,27 @@ Item {
     property string fixtureNotice: ""
     property var pendingRemoval: null
     property var pendingAssociation: null
+    property var pendingLocalMetadataDeletion: null
+    property bool associationSubjectSelected: false
+    property double selectedAssociationSubjectId: 0
+    property var associationSmokeSubjects: [{
+        bangumiId: 9784,
+        title: "名侦探柯南",
+        meta: "Bangumi 9784 · 3200 话"
+    }]
+    property var associationSmokeEpisodes: {
+        const episodes = []
+        for (let number = 481; number <= 504; ++number) {
+            episodes.push({
+                id: number,
+                number: "EP" + number,
+                title: "用于检查大量章节分页与定位的章节标题 " + number,
+                episodeNumber: number,
+                type: 0
+            })
+        }
+        return episodes
+    }
     property var sourceItems: uiFixtureMode
             ? FixtureData.subjects
             : (libraryViewModel ? libraryViewModel.mediaItems : [])
@@ -132,7 +153,11 @@ Item {
         if (uiFixtureMode || !media || actionsBusy())
             return
         pendingAssociation = media
-        associationSearch.text = media.resourceTitle || ""
+        associationSearch.text = ""
+        associationEpisodeLocator.text = ""
+        associationEpisodePageField.text = ""
+        associationSubjectSelected = false
+        selectedAssociationSubjectId = 0
         libraryViewModel.clearAssociationPicker()
         associationDialog.open()
         associationSearch.forceActiveFocus()
@@ -141,11 +166,79 @@ Item {
     function submitAssociationSearch() {
         if (root.actionsBusy())
             return
+        associationSubjectSelected = false
+        selectedAssociationSubjectId = 0
+        associationEpisodeLocator.text = ""
+        associationEpisodePageField.text = ""
         Qt.inputMethod.commit()
         Qt.callLater(function() {
             libraryViewModel.searchAssociationSubjects(
                 associationSearch.text)
         })
+    }
+
+    Timer {
+        interval: 80
+        running: uiAssociationSmokeTest || uiCustomMetadataSmokeTest
+        repeat: false
+        onTriggered: {
+            root.pendingAssociation = {
+                id: 1,
+                title: "oceans.mp4",
+                associationCount: 0,
+                associations: []
+            }
+            root.associationSubjectSelected = uiAssociationSmokeTest
+            root.selectedAssociationSubjectId = uiAssociationSmokeTest ? 9784 : 0
+            associationDialog.open()
+            if (uiAssociationSmokeTest)
+                Qt.callLater(function() {
+                    episodeResults.positionViewAtIndex(19, ListView.Center)
+                })
+            if (uiCustomMetadataSmokeTest)
+                Qt.callLater(function() { customMetadataDialog.open() })
+        }
+    }
+
+    Connections {
+        target: libraryViewModel
+        ignoreUnknownSignals: true
+
+        function onAssociationChanged() {
+            if (!libraryViewModel)
+                return
+            if (libraryViewModel.associationEpisodePage > 0)
+                associationEpisodePageField.text =
+                    String(libraryViewModel.associationEpisodePage)
+            const focusIndex =
+                libraryViewModel.associationEpisodeFocusIndex
+            if (focusIndex >= 0)
+                Qt.callLater(function() {
+                    episodeResults.positionViewAtIndex(
+                        focusIndex, ListView.Center)
+                })
+        }
+
+        function onLocalMetadataEditorChanged() {
+            if (!libraryViewModel
+                    || libraryViewModel.localMetadataEditor.subjectId === undefined)
+                return
+            customMetadataDialog.editMode = true
+            customMetadataDialog.metadata =
+                libraryViewModel.localMetadataEditor
+            customMetadataDialog.open()
+        }
+
+        function onLocalMetadataSaved(subjectId) {
+            if (customMetadataDialog.visible)
+                customMetadataDialog.close()
+            if (associationDialog.visible)
+                associationDialog.close()
+        }
+
+        function onLocalMetadataDeleted(subjectId) {
+            root.pendingLocalMetadataDeletion = null
+        }
     }
 
     FileDialog {
@@ -218,13 +311,68 @@ Item {
     }
 
     Dialog {
+        id: removeLocalMetadataDialog
+        anchors.centerIn: parent
+        width: Math.min(480, root.width - Theme.pageMargin * 2)
+        modal: true
+        title: "删除数据库元数据条目"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        padding: 20
+
+        palette.window: Theme.surfaceRaised
+        palette.windowText: Theme.text
+        palette.button: Theme.surface
+        palette.buttonText: Theme.text
+        palette.highlight: Theme.accent
+        palette.highlightedText: Theme.accentText
+
+        background: Rectangle {
+            radius: Theme.radius
+            color: Theme.surfaceRaised
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        onAccepted: {
+            if (root.pendingLocalMetadataDeletion && libraryViewModel)
+                libraryViewModel.deleteLocalMetadata(
+                    root.pendingLocalMetadataDeletion.subjectId)
+        }
+        onRejected: root.pendingLocalMetadataDeletion = null
+
+        Column {
+            width: removeLocalMetadataDialog.availableWidth
+            spacing: 10
+
+            AppText {
+                width: parent.width
+                text: root.pendingLocalMetadataDeletion
+                      ? "确定删除数据库条目“"
+                        + root.pendingLocalMetadataDeletion.title + "”？"
+                      : "确定删除这个本地元数据条目？"
+                color: Theme.text
+                font.pixelSize: Theme.bodySize
+                font.weight: Font.DemiBold
+                wrapMode: Text.Wrap
+            }
+
+            AppText {
+                width: parent.width
+                text: "本地章节和媒体关联会一并移除，导入记录和视频文件都会保留。来自 Bangumi 的条目以后仍可重新获取。"
+                color: Theme.textMuted
+                font.pixelSize: Theme.captionSize
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    Dialog {
         id: associationDialog
         anchors.centerIn: parent
-        width: Math.min(820, root.width - Theme.pageMargin * 2)
-        height: Math.min(650, root.height - Theme.pageMargin * 2)
+        width: Math.min(900, root.width - Theme.pageMargin * 2)
+        height: Math.min(590, root.height - Theme.pageMargin * 2)
         modal: true
         title: "关联 Bangumi 章节"
-        standardButtons: Dialog.Cancel
         padding: 20
 
         palette.window: Theme.surfaceRaised
@@ -243,13 +391,14 @@ Item {
 
         onClosed: {
             pendingAssociation = null
+            associationSubjectSelected = false
+            selectedAssociationSubjectId = 0
             if (libraryViewModel)
                 libraryViewModel.clearAssociationPicker()
         }
 
         ColumnLayout {
-            width: associationDialog.availableWidth
-            height: associationDialog.availableHeight
+            anchors.fill: parent
             spacing: 12
 
             AppText {
@@ -268,7 +417,7 @@ Item {
                 AppTextField {
                     id: associationSearch
                     Layout.fillWidth: true
-                    height: 40
+                    Layout.preferredHeight: 40
                     placeholderText: "搜索动画名称"
                     onAccepted: {
                         if (!inputMethodComposing)
@@ -367,58 +516,102 @@ Item {
                             font.weight: Font.DemiBold
                         }
 
-                        ListView {
-                            id: subjectResults
+                        Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            clip: true
-                            spacing: 6
-                            model: libraryViewModel
-                                   ? libraryViewModel.associationSubjects : []
 
-                            delegate: Rectangle {
-                                required property var modelData
-                                width: ListView.view.width
-                                height: 66
-                                radius: Theme.radiusSmall
-                                color: subjectMouse.containsMouse
-                                       ? Theme.surfaceHover
-                                       : Theme.surfaceRaised
-                                border.width: 1
-                                border.color: Theme.border
+                            ListView {
+                                id: subjectResults
+                                anchors.fill: parent
+                                clip: true
+                                spacing: 6
+                                model: uiAssociationSmokeTest
+                                       ? root.associationSmokeSubjects
+                                       : (libraryViewModel
+                                          ? libraryViewModel
+                                            .associationSubjects : [])
 
-                                Column {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 10
-                                    spacing: 4
-                                    AppText {
-                                        width: parent.width
-                                        text: modelData.title
-                                        color: Theme.text
-                                        font.pixelSize: Theme.bodySize
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: ListView.view.width
+                                    height: 66
+                                    radius: Theme.radiusSmall
+                                    color: root.selectedAssociationSubjectId
+                                           === modelData.bangumiId
+                                           ? Theme.surfaceHover
+                                           : (subjectMouse.containsMouse
+                                              ? Theme.surfaceHover
+                                              : Theme.surfaceRaised)
+                                    border.width: 1
+                                    border.color:
+                                        root.selectedAssociationSubjectId
+                                        === modelData.bangumiId
+                                        ? Theme.accent : Theme.border
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.margins: 10
+                                        spacing: 4
+                                        AppText {
+                                            width: parent.width
+                                            text: modelData.title
+                                            color: Theme.text
+                                            font.pixelSize: Theme.bodySize
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+                                        AppText {
+                                            width: parent.width
+                                            text: modelData.meta
+                                            color: Theme.textFaint
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                        }
                                     }
-                                    AppText {
-                                        width: parent.width
-                                        text: modelData.meta
-                                        color: Theme.textFaint
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
+
+                                    MouseArea {
+                                        id: subjectMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        enabled: !root.actionsBusy()
+                                        onClicked: {
+                                            root.associationSubjectSelected = true
+                                            root.selectedAssociationSubjectId =
+                                                modelData.bangumiId
+                                            associationEpisodeLocator.text = ""
+                                            associationEpisodePageField.text = ""
+                                            libraryViewModel
+                                                .selectAssociationSubject(
+                                                    modelData.bangumiId)
+                                        }
                                     }
                                 }
+                            }
 
-                                MouseArea {
-                                    id: subjectMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    enabled: !root.actionsBusy()
-                                    onClicked: libraryViewModel
-                                                   .selectAssociationSubject(
-                                                       modelData.bangumiId)
-                                }
+                            AppText {
+                                anchors.centerIn: parent
+                                width: parent.width - 24
+                                visible: subjectResults.count === 0
+                                text: libraryViewModel
+                                      && libraryViewModel.associating
+                                      ? "正在搜索 Bangumi 条目……"
+                                      : libraryViewModel
+                                        && libraryViewModel.errorMessage.length > 0
+                                        ? libraryViewModel.errorMessage
+                                        : associationSearch.text.trim().length === 0
+                                          ? "输入动画名称后搜索"
+                                          : libraryViewModel
+                                            && libraryViewModel.noticeMessage.length > 0
+                                            ? libraryViewModel.noticeMessage
+                                            : "没有匹配的 Bangumi 条目"
+                                color: libraryViewModel
+                                       && libraryViewModel.errorMessage.length > 0
+                                       ? Theme.danger : Theme.textMuted
+                                font.pixelSize: Theme.captionSize
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
                             }
                         }
                     }
@@ -435,66 +628,351 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 10
-                        spacing: 8
+                        spacing: 7
 
-                        AppText {
-                            text: "章节"
-                            color: Theme.textMuted
-                            font.pixelSize: Theme.captionSize
-                            font.weight: Font.DemiBold
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            AppText {
+                                Layout.fillWidth: true
+                                text: {
+                                    const total = uiAssociationSmokeTest
+                                        ? 3200
+                                        : (libraryViewModel
+                                           ? libraryViewModel
+                                             .associationEpisodeTotal : 0)
+                                    return total > 0
+                                        ? "章节 · 共 " + total + " 条"
+                                        : "章节"
+                                }
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.captionSize
+                                font.weight: Font.DemiBold
+                            }
+
+                            AppButton {
+                                Layout.preferredWidth: 58
+                                Layout.preferredHeight: 32
+                                text: "正序"
+                                primary: !libraryViewModel
+                                         || !libraryViewModel
+                                             .associationEpisodeDescending
+                                enabled: root.associationSubjectSelected
+                                         && (uiAssociationSmokeTest
+                                             || !root.actionsBusy())
+                                onClicked: {
+                                    if (libraryViewModel)
+                                        libraryViewModel
+                                            .setAssociationEpisodeDescending(
+                                                false)
+                                }
+                            }
+
+                            AppButton {
+                                Layout.preferredWidth: 58
+                                Layout.preferredHeight: 32
+                                text: "倒序"
+                                primary: libraryViewModel
+                                         && libraryViewModel
+                                             .associationEpisodeDescending
+                                enabled: root.associationSubjectSelected
+                                         && (uiAssociationSmokeTest
+                                             || !root.actionsBusy())
+                                onClicked: {
+                                    if (libraryViewModel)
+                                        libraryViewModel
+                                            .setAssociationEpisodeDescending(
+                                                true)
+                                }
+                            }
                         }
 
-                        ListView {
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            AppTextField {
+                                id: associationEpisodeLocator
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 34
+                                placeholderText: "定位章节号，如 500"
+                                text: uiAssociationSmokeTest ? "500" : ""
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                validator: DoubleValidator {
+                                    bottom: 0.001
+                                    top: libraryViewModel
+                                         && libraryViewModel
+                                             .associationEpisodeTotal > 0
+                                         ? libraryViewModel
+                                             .associationEpisodeTotal
+                                         : 10000000
+                                    decimals: 3
+                                    notation: DoubleValidator.StandardNotation
+                                }
+                                enabled: root.associationSubjectSelected
+                                         && (uiAssociationSmokeTest
+                                             || !root.actionsBusy())
+                                onAccepted: {
+                                    if (!inputMethodComposing
+                                            && libraryViewModel)
+                                        libraryViewModel.locateAssociationEpisode(
+                                            text)
+                                }
+                            }
+
+                            AppButton {
+                                Layout.preferredWidth: 58
+                                Layout.preferredHeight: 34
+                                text: "定位"
+                                primary: true
+                                enabled: associationEpisodeLocator.enabled
+                                         && associationEpisodeLocator
+                                             .acceptableInput
+                                onPressed: Qt.inputMethod.commit()
+                                onClicked: {
+                                    if (libraryViewModel)
+                                        libraryViewModel.locateAssociationEpisode(
+                                            associationEpisodeLocator.text)
+                                }
+                            }
+                        }
+
+                        Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            clip: true
-                            spacing: 6
-                            model: libraryViewModel
-                                   ? libraryViewModel.associationEpisodes : []
 
-                            delegate: Rectangle {
-                                required property var modelData
-                                width: ListView.view.width
-                                height: 58
-                                radius: Theme.radiusSmall
-                                color: Theme.surfaceRaised
-                                border.width: 1
-                                border.color: Theme.border
+                            ListView {
+                                id: episodeResults
+                                anchors.fill: parent
+                                clip: true
+                                spacing: 6
+                                model: uiAssociationSmokeTest
+                                       ? root.associationSmokeEpisodes
+                                       : (libraryViewModel
+                                          ? libraryViewModel
+                                            .associationEpisodes : [])
 
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 8
-                                    spacing: 8
-                                    AppText {
-                                        Layout.preferredWidth: 48
-                                        text: modelData.number
-                                        color: Theme.textFaint
-                                        font.pixelSize: 11
-                                    }
-                                    AppText {
-                                        Layout.fillWidth: true
-                                        text: modelData.title
-                                        color: Theme.text
-                                        font.pixelSize: Theme.captionSize
-                                        elide: Text.ElideRight
-                                    }
-                                    AppButton {
-                                        text: "关联"
-                                        primary: true
-                                        enabled: !root.actionsBusy()
-                                        onClicked: {
-                                            libraryViewModel.linkMedia(
-                                                        root.pendingAssociation.id,
-                                                        modelData.id)
-                                            associationDialog.close()
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: ListView.view.width
+                                    height: 52
+                                    radius: Theme.radiusSmall
+                                    color: Theme.surfaceRaised
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+                                        AppText {
+                                            Layout.preferredWidth: 48
+                                            text: modelData.number
+                                            color: Theme.textFaint
+                                            font.pixelSize: 11
+                                        }
+                                        AppText {
+                                            Layout.fillWidth: true
+                                            text: modelData.title
+                                            color: Theme.text
+                                            font.pixelSize: Theme.captionSize
+                                            elide: Text.ElideRight
+                                        }
+                                        AppButton {
+                                            Layout.preferredWidth: 72
+                                            Layout.preferredHeight: 34
+                                            text: "关联"
+                                            primary: true
+                                            enabled: !root.actionsBusy()
+                                            onClicked: {
+                                                libraryViewModel.linkMedia(
+                                                    root.pendingAssociation.id,
+                                                    modelData.id)
+                                                associationDialog.close()
+                                            }
                                         }
                                     }
                                 }
                             }
+
+                            AppText {
+                                anchors.centerIn: parent
+                                width: parent.width - 24
+                                visible: episodeResults.count === 0
+                                text: !root.associationSubjectSelected
+                                      ? "先从左侧选择一个 Bangumi 条目"
+                                      : libraryViewModel
+                                        && libraryViewModel.associating
+                                        ? "正在读取章节……"
+                                        : libraryViewModel
+                                          && libraryViewModel.errorMessage.length > 0
+                                          ? libraryViewModel.errorMessage
+                                          : libraryViewModel
+                                            && libraryViewModel.noticeMessage.length > 0
+                                            ? libraryViewModel.noticeMessage
+                                            : "该条目没有可关联章节"
+                                color: libraryViewModel
+                                       && libraryViewModel.errorMessage.length > 0
+                                       ? Theme.danger : Theme.textMuted
+                                font.pixelSize: Theme.captionSize
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            visible: root.associationSubjectSelected
+
+                            AppButton {
+                                Layout.preferredWidth: 40
+                                Layout.preferredHeight: 32
+                                text: "‹"
+                                ToolTip.visible: hovered
+                                ToolTip.text: "上一页"
+                                enabled: !uiAssociationSmokeTest
+                                         && libraryViewModel
+                                         && libraryViewModel
+                                             .associationEpisodePage > 1
+                                         && !root.actionsBusy()
+                                onClicked: libraryViewModel
+                                    .previousAssociationEpisodePage()
+                            }
+
+                            AppText {
+                                Layout.preferredWidth: 54
+                                text: uiAssociationSmokeTest
+                                      ? "21/134"
+                                      : (libraryViewModel
+                                         ? libraryViewModel
+                                           .associationEpisodePage + "/"
+                                           + libraryViewModel
+                                             .associationEpisodePageCount
+                                         : "0/0")
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.captionSize
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            AppTextField {
+                                id: associationEpisodePageField
+                                Layout.preferredWidth: 48
+                                Layout.preferredHeight: 32
+                                horizontalAlignment: TextInput.AlignHCenter
+                                text: uiAssociationSmokeTest ? "21" : ""
+                                placeholderText: "页"
+                                inputMethodHints: Qt.ImhDigitsOnly
+                                validator: IntValidator {
+                                    bottom: 1
+                                    top: libraryViewModel
+                                         ? Math.max(1, libraryViewModel
+                                             .associationEpisodePageCount) : 1
+                                }
+                                enabled: uiAssociationSmokeTest
+                                         || (libraryViewModel
+                                             && libraryViewModel
+                                                 .associationEpisodePageCount
+                                                > 1
+                                             && !root.actionsBusy())
+                                onAccepted: {
+                                    if (!inputMethodComposing
+                                            && libraryViewModel)
+                                        libraryViewModel
+                                            .goToAssociationEpisodePage(
+                                                parseInt(text))
+                                }
+                            }
+
+                            AppButton {
+                                Layout.preferredWidth: 58
+                                Layout.preferredHeight: 32
+                                text: "跳转"
+                                enabled: associationEpisodePageField.enabled
+                                         && associationEpisodePageField
+                                             .acceptableInput
+                                onPressed: Qt.inputMethod.commit()
+                                onClicked: {
+                                    if (libraryViewModel)
+                                        libraryViewModel
+                                            .goToAssociationEpisodePage(
+                                                parseInt(
+                                                    associationEpisodePageField
+                                                        .text))
+                                }
+                            }
+
+                            AppButton {
+                                Layout.preferredWidth: 40
+                                Layout.preferredHeight: 32
+                                text: "›"
+                                ToolTip.visible: hovered
+                                ToolTip.text: "下一页"
+                                enabled: !uiAssociationSmokeTest
+                                         && libraryViewModel
+                                         && libraryViewModel
+                                             .associationEpisodePage
+                                            < libraryViewModel
+                                              .associationEpisodePageCount
+                                         && !root.actionsBusy()
+                                onClicked: libraryViewModel
+                                    .nextAssociationEpisodePage()
+                            }
                         }
                     }
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                AppButton {
+                    text: "创建本地条目"
+                    enabled: root.pendingAssociation !== null
+                             && !root.actionsBusy()
+                    onClicked: {
+                        customMetadataDialog.editMode = false
+                        customMetadataDialog.metadata = ({})
+                        customMetadataDialog.open()
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    text: "取消"
+                    onClicked: associationDialog.close()
+                }
+            }
+        }
+    }
+
+    LocalMetadataEditorDialog {
+        id: customMetadataDialog
+        busy: root.actionsBusy()
+
+        onClosed: {
+            if (libraryViewModel)
+                libraryViewModel.clearLocalMetadataEditor()
+        }
+
+        onSaveRequested: function(displayTitle, originalTitle, summary,
+                                  coverUrl, episodeTitle, episodeNumber) {
+            if (!libraryViewModel)
+                return
+            if (editMode) {
+                libraryViewModel.updateLocalMetadata(
+                    metadata.subjectId, displayTitle, originalTitle,
+                    summary, coverUrl)
+            }
+            else if (root.pendingAssociation) {
+                libraryViewModel.createCustomMetadata(
+                    root.pendingAssociation.id, displayTitle, originalTitle,
+                    summary, coverUrl, episodeTitle, episodeNumber)
             }
         }
     }
@@ -681,6 +1159,23 @@ Item {
                                               + " 个媒体文件"
                                         color: Theme.textFaint
                                         font.pixelSize: Theme.captionSize
+                                    }
+                                }
+
+                                AppButton {
+                                    text: "编辑元数据"
+                                    enabled: !root.actionsBusy()
+                                    onClicked: libraryViewModel
+                                        .loadLocalMetadata(modelData.subjectId)
+                                }
+
+                                AppButton {
+                                    text: "删除条目"
+                                    enabled: !root.actionsBusy()
+                                    onClicked: {
+                                        root.pendingLocalMetadataDeletion =
+                                            modelData
+                                        removeLocalMetadataDialog.open()
                                     }
                                 }
 

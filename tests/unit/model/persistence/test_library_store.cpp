@@ -10,6 +10,7 @@
 #include <ilias/platform/qt.hpp>
 
 #include "model/library/local_media_import.hpp"
+#include "model/library/local_metadata.hpp"
 #include "model/persistence/catalog_store.hpp"
 #include "model/persistence/database.hpp"
 #include "model/persistence/library_store.hpp"
@@ -482,7 +483,7 @@ TEST(LocalMediaAssociation,
         [&requestedOffset](std::int64_t subjectId, int limit, int offset)
             -> ilias::Task<BangumiResult<BangumiEpisodeResponse>> {
             EXPECT_EQ(subjectId, 400602);
-            EXPECT_EQ(limit, 200);
+            EXPECT_EQ(limit, 24);
             requestedOffset = offset;
             co_return BangumiEpisodeResponse {
                 .value =
@@ -524,11 +525,14 @@ TEST(LocalMediaAssociation,
 
     auto episodes = service.loadAssociationEpisodes(subjects->front()).wait();
     ASSERT_TRUE(episodes) << episodes.error().message.toStdString();
-    ASSERT_EQ(episodes->size(), 1U);
+    ASSERT_EQ(episodes->episodes.size(), 1U);
+    EXPECT_EQ(episodes->total, 1);
     EXPECT_EQ(requestedOffset, 0);
-    EXPECT_EQ(episodes->front().displayNumber, QStringLiteral("EP1"));
+    EXPECT_EQ(episodes->episodes.front().displayNumber,
+              QStringLiteral("EP1"));
 
-    auto linked = service.linkMedia(item, episodes->front().id).wait();
+    auto linked =
+        service.linkMedia(item, episodes->episodes.front().id).wait();
     ASSERT_TRUE(linked) << linked.error().message.toStdString();
     auto media = service.listLibraryMedia().wait();
     ASSERT_TRUE(media) << media.error().message.toStdString();
@@ -550,13 +554,14 @@ TEST(LocalMediaAssociation,
     ASSERT_EQ((*details)->episodes.front().media.size(), 1U);
     EXPECT_EQ((*details)->episodes.front().media.front().item.id, item);
 
-    auto played = service.playEpisode(episodes->front().id).wait();
+    auto played =
+        service.playEpisode(episodes->episodes.front().id).wait();
     ASSERT_TRUE(played) << played.error().message.toStdString();
     EXPECT_EQ(QFileInfo(launchedUrl.toLocalFile()).canonicalFilePath(),
               QFileInfo(mediaPath).canonicalFilePath());
 
     auto unlinked =
-        service.unlinkMedia(item, episodes->front().id).wait();
+        service.unlinkMedia(item, episodes->episodes.front().id).wait();
     ASSERT_TRUE(unlinked) << unlinked.error().message.toStdString();
     auto afterUnlink = service.listLibraryMedia().wait();
     ASSERT_TRUE(afterUnlink) << afterUnlink.error().message.toStdString();
@@ -852,6 +857,165 @@ TEST(LocalMediaImportService, RejectsRemoteAndMissingFilesWithoutWriting) {
     auto entries = store.listMediaEntries().wait();
     ASSERT_TRUE(entries) << entries.error().message();
     EXPECT_TRUE(entries->empty());
+}
+
+TEST(LocalMetadataService, PersistsStandaloneMetadataAndManualLink) {
+    QTemporaryDir databaseDirectory;
+    ASSERT_TRUE(databaseDirectory.isValid());
+    SqlSettings databaseSettings;
+    databaseSettings.database_type = "sqlite";
+    databaseSettings.database_path =
+        databaseDirectory.filePath(QStringLiteral("local-metadata.db"))
+            .toStdString();
+    auto databaseResult = LocalDatabase::open(databaseSettings).wait();
+    ASSERT_TRUE(databaseResult) << databaseResult.error().message();
+    auto database = std::move(*databaseResult);
+    auto catalog = openCatalog(database);
+    auto libraryResult = LibraryStore::open(database).wait();
+    ASSERT_TRUE(libraryResult) << libraryResult.error().message();
+    auto library = std::move(*libraryResult);
+    auto media = library.upsertDiscoveredMedia({sampleDiscovery()}).wait();
+    ASSERT_TRUE(media) << media.error().message();
+    const SourceItemId item = media->front().items.front().id;
+
+    LocalMetadataService service(catalog, library);
+    auto created = service.createAndLink(
+        item,
+        {
+            .displayTitle = QStringLiteral("本地自定义动画"),
+            .originalTitle = QStringLiteral("Local Original Title"),
+            .summary = QStringLiteral("只存在于本机数据库"),
+            .coverUrl = QUrl(QStringLiteral("https://example.test/cover.jpg")),
+            .episodeTitle = QStringLiteral("自定义第一章"),
+            .episodeNumber = 1.0,
+        }).wait();
+
+    ASSERT_TRUE(created) << created.error().message.toStdString();
+    auto subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    ASSERT_TRUE(*subject);
+    EXPECT_EQ((*subject)->summary.title,
+              QStringLiteral("Local Original Title"));
+    EXPECT_EQ((*subject)->summary.titleCn,
+              QStringLiteral("本地自定义动画"));
+    ASSERT_EQ((*subject)->externalRefs.size(), 1U);
+    EXPECT_EQ((*subject)->externalRefs.front().ref.providerKey,
+              QStringLiteral("local-manual"));
+
+    auto episodes = catalog.listEpisodes(*created).wait();
+    ASSERT_TRUE(episodes) << episodes.error().message();
+    ASSERT_EQ(episodes->size(), 1U);
+    EXPECT_EQ(episodes->front().title, QStringLiteral("自定义第一章"));
+    ASSERT_EQ(episodes->front().externalRefs.size(), 1U);
+    EXPECT_EQ(episodes->front().externalRefs.front().ref.providerKey,
+              QStringLiteral("local-manual"));
+    auto links = library.listSourceItemMediaLinks(item).wait();
+    ASSERT_TRUE(links) << links.error().message();
+    ASSERT_EQ(links->size(), 1U);
+    EXPECT_EQ(links->front().episodeId, episodes->front().id);
+    EXPECT_EQ(links->front().kind, MediaLinkKind::Manual);
+
+    auto updated = service.update(
+        *created,
+        {
+            .displayTitle = QStringLiteral("修改后的本地标题"),
+            .originalTitle = {},
+            .summary = {},
+            .coverUrl = std::nullopt,
+            .episodeTitle = {},
+            .episodeNumber = std::nullopt,
+        }).wait();
+    ASSERT_TRUE(updated) << updated.error().message.toStdString();
+    subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    ASSERT_TRUE(*subject);
+    EXPECT_EQ((*subject)->summary.title,
+              QStringLiteral("修改后的本地标题"));
+    EXPECT_FALSE((*subject)->summary.titleCn);
+    EXPECT_FALSE((*subject)->summary.summary);
+    EXPECT_FALSE((*subject)->coverUrl);
+    EXPECT_EQ((*subject)->externalRefs.front().ref.providerKey,
+              QStringLiteral("local-manual"));
+
+    auto removed = service.remove(*created).wait();
+    ASSERT_TRUE(removed) << removed.error().message.toStdString();
+    subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    EXPECT_FALSE(*subject);
+    auto remainingMedia = library.listMediaEntries().wait();
+    ASSERT_TRUE(remainingMedia) << remainingMedia.error().message();
+    EXPECT_EQ(remainingMedia->size(), 1U);
+    links = library.listSourceItemMediaLinks(item).wait();
+    ASSERT_TRUE(links) << links.error().message();
+    EXPECT_TRUE(links->empty());
+}
+
+TEST(DatabaseMetadataService,
+     EditsBangumiRecordLocallyAndLetsRemoteSnapshotOverwriteIt) {
+    auto database = openMemoryDatabase();
+    auto catalog = openCatalog(database);
+    auto libraryResult = LibraryStore::open(database).wait();
+    ASSERT_TRUE(libraryResult) << libraryResult.error().message();
+    auto library = std::move(*libraryResult);
+    LocalMetadataService service(catalog, library);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+
+    auto created = catalog.upsertSubjectSnapshot({
+        .origin = {.providerKey = QStringLiteral("bangumi"),
+                   .externalId = QStringLiteral("400602")},
+        .metadataLevel = SubjectMetadataLevel::Details,
+        .subjectType = 2,
+        .title = QStringLiteral("Sousou no Frieren"),
+        .titleCn = QStringLiteral("葬送的芙莉莲"),
+        .summary = QStringLiteral("Bangumi 简介"),
+        .coverUrl = QUrl(QStringLiteral("https://example.test/remote.jpg")),
+        .fetchedAt = now,
+    }).wait();
+    ASSERT_TRUE(created) << created.error().message();
+
+    auto updated = service.update(
+        *created,
+        {
+            .displayTitle = QStringLiteral("本地临时标题"),
+            .originalTitle = {},
+            .summary = QStringLiteral("本地临时简介"),
+            .coverUrl = std::nullopt,
+        }).wait();
+    ASSERT_TRUE(updated) << updated.error().message.toStdString();
+    auto subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    ASSERT_TRUE(*subject);
+    EXPECT_EQ((*subject)->summary.title, QStringLiteral("本地临时标题"));
+    ASSERT_EQ((*subject)->externalRefs.size(), 1U);
+    EXPECT_EQ((*subject)->externalRefs.front().ref.providerKey,
+              QStringLiteral("bangumi"));
+
+    auto refreshed = catalog.upsertSubjectSnapshot({
+        .origin = {.providerKey = QStringLiteral("bangumi"),
+                   .externalId = QStringLiteral("400602")},
+        .metadataLevel = SubjectMetadataLevel::Details,
+        .subjectType = 2,
+        .title = QStringLiteral("Sousou no Frieren"),
+        .titleCn = QStringLiteral("葬送的芙莉莲"),
+        .summary = QStringLiteral("刷新的 Bangumi 简介"),
+        .coverUrl = QUrl(QStringLiteral("https://example.test/new.jpg")),
+        .fetchedAt = now.addSecs(60),
+    }).wait();
+    ASSERT_TRUE(refreshed) << refreshed.error().message();
+    EXPECT_EQ(*refreshed, *created);
+    subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    ASSERT_TRUE(*subject);
+    EXPECT_EQ((*subject)->summary.titleCn,
+              QStringLiteral("葬送的芙莉莲"));
+    EXPECT_EQ((*subject)->summary.summary,
+              QStringLiteral("刷新的 Bangumi 简介"));
+
+    auto removed = service.remove(*created).wait();
+    ASSERT_TRUE(removed) << removed.error().message.toStdString();
+    subject = catalog.getSubject(*created).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    EXPECT_FALSE(*subject);
 }
 
 #define EXPAND_IN_MAIN_WITH_ARGS(argc, argv)                                   \

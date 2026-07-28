@@ -33,6 +33,11 @@ auto subjectAt(std::int64_t id) -> BangumiSearchSubject {
         .nameCn = QStringLiteral("动画 %1").arg(id),
         .summary = QStringLiteral("条目简介"),
         .date = QStringLiteral("2026-07-27"),
+        .images = {.large = QStringLiteral("large-cover"),
+                   .common = QStringLiteral("common-cover"),
+                   .medium = QStringLiteral("medium-cover"),
+                   .small = QStringLiteral("small-cover"),
+                   .grid = QStringLiteral("grid-cover")},
         .episodes = 12,
         .totalEpisodes = 12,
         .rating = {.rank = 100, .total = 200, .score = 8.2},
@@ -70,6 +75,11 @@ TEST(BangumiBrowserViewModel, SearchesAndAppendsPublicResultsByPage) {
     processUntilSettled(viewModel);
 
     EXPECT_EQ(viewModel.searchResults().size(), 24);
+    EXPECT_EQ(viewModel.searchResults().front()
+                  .toMap()
+                  .value(QStringLiteral("coverUrl"))
+                  .toString(),
+              QStringLiteral("large-cover"));
     EXPECT_EQ(viewModel.searchTotal(), 30);
     EXPECT_TRUE(viewModel.hasMoreSearch());
     EXPECT_TRUE(viewModel.searchError().isEmpty());

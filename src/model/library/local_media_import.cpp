@@ -195,7 +195,7 @@ auto fetchAllEpisodes(LocalMediaImportService::EpisodeLookup &lookup,
 }
 
 auto episodeSnapshots(const std::vector<BangumiEpisode> &episodes,
-                      const QDateTime &fetchedAt)
+                      const QDateTime &fetchedAt, int baseOffset = 0)
     -> std::vector<persistence::EpisodeSnapshot> {
     std::vector<persistence::EpisodeSnapshot> snapshots;
     snapshots.reserve(episodes.size());
@@ -209,7 +209,7 @@ auto episodeSnapshots(const std::vector<BangumiEpisode> &episodes,
         snapshots.push_back({
             .origin = {.providerKey = QStringLiteral("bangumi"),
                        .externalId = QString::number(episode.id)},
-            .sortOrder = static_cast<int>(index),
+            .sortOrder = baseOffset + static_cast<int>(index),
             .episodeType = episode.type,
             .episodeNumber = episode.episodeNumber
                                  ? episode.episodeNumber
@@ -521,6 +521,10 @@ auto LocalMediaImportService::listLibraryMedia()
                     .episodeNumber = (*episode)->episodeNumber,
                     .episodeType = (*episode)->episodeType,
                     .sortOrder = (*episode)->sortOrder,
+                    .subjectCoverUrl =
+                        (*subject)->coverUrl
+                            ? (*subject)->coverUrl->toString()
+                            : QString {},
                 });
             }
         }
@@ -577,12 +581,13 @@ auto LocalMediaImportService::searchAssociationSubjects(QString query)
 }
 
 auto LocalMediaImportService::loadAssociationEpisodes(
-    const BangumiSearchSubject &subject)
-    -> ilias::Task<LibraryResult<std::vector<AssociationEpisodeOption>>> {
-    if (mCatalog == nullptr || !mEpisodeLookup || subject.id <= 0) {
+    const BangumiSearchSubject &subject, int limit, int offset)
+    -> ilias::Task<LibraryResult<AssociationEpisodePage>> {
+    if (mCatalog == nullptr || !mEpisodeLookup || subject.id <= 0
+        || limit < 1 || limit > 200 || offset < 0) {
         co_return ilias::Err(libraryError(
             LibraryErrorCode::RemoteLookupFailure,
-            QStringLiteral("章节关联服务未配置或条目无效")));
+            QStringLiteral("章节关联服务未配置或分页参数无效")));
     }
 
     const QDateTime fetchedAt = QDateTime::currentDateTimeUtc();
@@ -594,13 +599,14 @@ auto LocalMediaImportService::loadAssociationEpisodes(
         co_return ilias::Err(catalogFailure(localSubject.error()));
     }
 
-    auto remoteEpisodes = co_await fetchAllEpisodes(mEpisodeLookup,
-                                                    subject.id);
-    if (!remoteEpisodes) {
-        co_return ilias::Err(std::move(remoteEpisodes.error()));
+    auto remotePage = co_await mEpisodeLookup(subject.id, limit, offset);
+    if (!remotePage) {
+        co_return ilias::Err(remoteFailure(remotePage.error()));
     }
+    auto &page = remotePage->value;
     auto localEpisodes = co_await mCatalog->upsertEpisodeSnapshots(
-        *localSubject, episodeSnapshots(*remoteEpisodes, fetchedAt));
+        *localSubject,
+        episodeSnapshots(page.data, fetchedAt, page.offset));
     if (!localEpisodes) {
         co_return ilias::Err(catalogFailure(localEpisodes.error()));
     }
@@ -608,7 +614,7 @@ auto LocalMediaImportService::loadAssociationEpisodes(
     std::vector<AssociationEpisodeOption> options;
     options.reserve(localEpisodes->size());
     for (std::size_t index = 0; index < localEpisodes->size(); ++index) {
-        const auto &episode = remoteEpisodes->at(index);
+        const auto &episode = page.data.at(index);
         QString title = preferredTitle(episode.nameCn, episode.name);
         if (title.isEmpty()) {
             title = QStringLiteral("标题待公布");
@@ -617,10 +623,18 @@ auto LocalMediaImportService::loadAssociationEpisodes(
             .id = localEpisodes->at(index),
             .title = std::move(title),
             .displayNumber = displayEpisodeNumber(episode),
+            .episodeNumber = episode.episodeNumber
+                                 ? episode.episodeNumber
+                                 : std::optional<double> {episode.sort},
             .episodeType = episode.type,
         });
     }
-    co_return options;
+    co_return AssociationEpisodePage {
+        .episodes = std::move(options),
+        .total = page.total,
+        .limit = page.limit,
+        .offset = page.offset,
+    };
 }
 
 auto LocalMediaImportService::linkMedia(SourceItemId item, EpisodeId episode)
@@ -814,7 +828,8 @@ auto LocalMediaImportService::ensureBangumiSubject(
 
 auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject,
                                                        int limit,
-                                                       int offset)
+                                                       int offset,
+                                                       bool descending)
     -> ilias::Task<LibraryResult<std::optional<SubjectLibraryDetails>>> {
     if (mCatalog == nullptr || !isValid(subject) || limit <= 0 || limit > 50
         || offset < 0) {
@@ -829,8 +844,8 @@ auto LocalMediaImportService::getSubjectLibraryDetails(SubjectId subject,
     if (!*storedSubject) {
         co_return std::optional<SubjectLibraryDetails> {};
     }
-    auto episodes = co_await mCatalog->listEpisodesPage(subject, limit,
-                                                        offset);
+    auto episodes = co_await mCatalog->listEpisodesPage(
+        subject, limit, offset, descending);
     if (!episodes) {
         co_return ilias::Err(catalogFailure(episodes.error()));
     }

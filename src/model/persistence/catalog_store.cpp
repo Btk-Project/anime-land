@@ -837,7 +837,8 @@ auto loadEpisodes(Forms<BackendTag> &forms, SubjectId subject)
 /// 分页加载章节，只为当前页补齐外部身份，避免大条目产生 N 次关系查询。
 template <typename BackendTag>
 auto loadEpisodePage(Forms<BackendTag> &forms, SubjectId subject,
-                     int limit, int offset) -> IoTask<EpisodeDetailsPage> {
+                     int limit, int offset, bool descending)
+    -> IoTask<EpisodeDetailsPage> {
     if (limit <= 0 || limit > 50 || offset < 0) {
         co_return Err(std::make_error_code(std::errc::invalid_argument));
     }
@@ -854,10 +855,12 @@ auto loadEpisodePage(Forms<BackendTag> &forms, SubjectId subject,
         ILIAS_CO_TRY(auto row, rowResult);
         rows.push_back(std::move(row));
     }
-    std::ranges::sort(rows, [](const Episode &left, const Episode &right) {
-        return std::tie(left.sortOrder, left.id)
-               < std::tie(right.sortOrder, right.id);
-    });
+    std::ranges::sort(
+        rows, [descending](const Episode &left, const Episode &right) {
+            const auto leftKey = std::tie(left.sortOrder, left.id);
+            const auto rightKey = std::tie(right.sortOrder, right.id);
+            return descending ? leftKey > rightKey : leftKey < rightKey;
+        });
 
     const auto begin = std::min<std::size_t>(
         static_cast<std::size_t>(offset), rows.size());
@@ -1007,6 +1010,79 @@ auto search(Forms<BackendTag> &forms, const LocalSubjectQuery &query)
     co_return summaries;
 }
 
+template <typename BackendTag>
+auto replaceSubjectMetadata(LocalDatabase &database,
+                            Forms<BackendTag> &forms, SubjectId subject,
+                            SubjectMetadataReplacement metadata)
+    -> IoTask<void> {
+    if (!isValid(subject) || metadata.title.trimmed().isEmpty()
+        || metadata.subjectType < 0) {
+        co_return Err(std::make_error_code(std::errc::invalid_argument));
+    }
+
+    ILIAS_CO_TRY(auto transaction,
+                 co_await database.advancedConnection().transaction());
+    using Subject = schema::SubjectRecord;
+    ILIAS_CO_TRY(auto subjects,
+                 Form<Subject, BackendTag>::bind(
+                     transaction, forms.subjects.getTableName()));
+
+    ILIAS_CO_TRY(auto stored, co_await loadSubjectRow(subjects, subject));
+    if (!stored) {
+        co_return Err(
+            std::make_error_code(std::errc::no_such_file_or_directory));
+    }
+
+    const std::int64_t now = QDateTime::currentMSecsSinceEpoch();
+    auto titleCn = metadata.titleCn.transform(
+        [](const QString &value) { return value.toStdString(); });
+    auto summary = metadata.summary.transform(
+        [](const QString &value) { return value.toStdString(); });
+    auto coverUrl = metadata.coverUrl.transform([](const QUrl &value) {
+        return value.toString(QUrl::FullyEncoded).toStdString();
+    });
+
+    ILIAS_CO_TRYV(
+        co_await subjects.update()
+            .set(subjects.sql(&Subject::subjectType) =
+                     static_cast<std::int64_t>(metadata.subjectType),
+                 subjects.sql(&Subject::title) =
+                     metadata.title.toStdString(),
+                 subjects.sql(&Subject::titleCn) = std::move(titleCn),
+                 subjects.sql(&Subject::summary) = std::move(summary),
+                 subjects.sql(&Subject::coverUrl) = std::move(coverUrl),
+                 subjects.sql(&Subject::updatedAt) = now)
+            .where(subjects.sql(&Subject::id) == subject.value)
+            .execute());
+    ILIAS_CO_TRYV(co_await transaction.commit());
+    co_return {};
+}
+
+template <typename BackendTag>
+auto removeSubject(LocalDatabase &database, Forms<BackendTag> &forms,
+                   SubjectId subject) -> IoTask<bool> {
+    if (!isValid(subject)) {
+        co_return Err(std::make_error_code(std::errc::invalid_argument));
+    }
+    ILIAS_CO_TRY(auto transaction,
+                 co_await database.advancedConnection().transaction());
+    using Subject = schema::SubjectRecord;
+    ILIAS_CO_TRY(auto subjects,
+                 Form<Subject, BackendTag>::bind(
+                     transaction, forms.subjects.getTableName()));
+    ILIAS_CO_TRY(auto stored, co_await loadSubjectRow(subjects, subject));
+    if (!stored) {
+        ILIAS_CO_TRYV(co_await transaction.commit());
+        co_return false;
+    }
+    ILIAS_CO_TRYV(
+        co_await subjects.remove()
+            .where(subjects.sql(&Subject::id) == subject.value)
+            .execute());
+    ILIAS_CO_TRYV(co_await transaction.commit());
+    co_return true;
+}
+
 } // namespace
 
 struct CatalogStore::State {
@@ -1065,6 +1141,32 @@ auto CatalogStore::upsertEpisodeSnapshots(
         mState->forms);
 }
 
+auto CatalogStore::replaceSubjectMetadata(
+    SubjectId subject, SubjectMetadataReplacement metadata) -> IoTask<void> {
+    AL_LOG_INFO(
+        "[database.catalog] exact metadata replacement started backend={} "
+        "subject_id={}",
+        mDatabase.backendName(), subject.value);
+    return std::visit(
+        [&](auto &forms) {
+            return ::anime_land::persistence::replaceSubjectMetadata(
+                mDatabase, forms, subject, std::move(metadata));
+        },
+        mState->forms);
+}
+
+auto CatalogStore::removeSubject(SubjectId subject) -> IoTask<bool> {
+    AL_LOG_INFO(
+        "[database.catalog] subject remove requested backend={} subject_id={}",
+        mDatabase.backendName(), subject.value);
+    return std::visit(
+        [&](auto &forms) {
+            return ::anime_land::persistence::removeSubject(
+                mDatabase, forms, subject);
+        },
+        mState->forms);
+}
+
 auto CatalogStore::replaceSubjectTags(
     SubjectId subject, QString providerKey,
     std::vector<SubjectTagSnapshot> tags) -> IoTask<void> {
@@ -1110,7 +1212,8 @@ auto CatalogStore::listEpisodes(SubjectId subject)
     return std::visit([&](auto &forms) { return loadEpisodes(forms, subject); }, mState->forms);
 }
 
-auto CatalogStore::listEpisodesPage(SubjectId subject, int limit, int offset)
+auto CatalogStore::listEpisodesPage(SubjectId subject, int limit, int offset,
+                                    bool descending)
     -> IoTask<EpisodeDetailsPage> {
     AL_LOG_INFO(
         "[database.catalog] episode page started backend={} subject_id={} "
@@ -1118,7 +1221,8 @@ auto CatalogStore::listEpisodesPage(SubjectId subject, int limit, int offset)
         mDatabase.backendName(), subject.value, limit, offset);
     return std::visit(
         [&](auto &forms) {
-            return loadEpisodePage(forms, subject, limit, offset);
+            return loadEpisodePage(forms, subject, limit, offset,
+                                   descending);
         },
         mState->forms);
 }

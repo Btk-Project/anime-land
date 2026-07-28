@@ -5,12 +5,14 @@
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
 #include "presentation/settings_view_model.hpp"
+#include "model/bangumi/network_cache.hpp"
 
 #include <QCoreApplication>
 #include <QFont>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlNetworkAccessManagerFactory>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QPalette>
@@ -25,13 +27,36 @@ void initializeAnimeLandQmlResources() {
 
 namespace anime_land::qml {
 
+namespace {
+
+class QmlNetworkAccessManagerFactory final
+    : public QQmlNetworkAccessManagerFactory {
+public:
+    explicit QmlNetworkAccessManagerFactory(
+        BangumiNetworkCacheOptions options)
+        : mOptions(std::move(options)) {}
+
+    auto create(QObject *parent) -> QNetworkAccessManager * override {
+        auto *network = new QNetworkAccessManager(parent);
+        installBangumiNetworkCache(*network, mOptions,
+                                   NetworkCachePartition::Images);
+        return network;
+    }
+
+private:
+    BangumiNetworkCacheOptions mOptions;
+};
+
+} // namespace
+
 auto runApplication(QGuiApplication &application,
                     BangumiCalendarViewModel *calendarViewModel,
                     BangumiBrowserViewModel *bangumiBrowserViewModel,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
-                    bool fixtureMode) -> int {
+                    bool fixtureMode,
+                    const BangumiNetworkCacheOptions &cacheOptions) -> int {
     initializeAnimeLandQmlResources();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 #if defined(_WIN32)
@@ -42,7 +67,19 @@ auto runApplication(QGuiApplication &application,
 
     const bool smokeTest =
         qEnvironmentVariableIsSet("ANIME_LAND_UI_SMOKE_TEST");
+    const bool associationSmokeTest = qEnvironmentVariableIsSet(
+        "ANIME_LAND_UI_ASSOCIATION_SMOKE_TEST");
+    const bool customMetadataSmokeTest = qEnvironmentVariableIsSet(
+        "ANIME_LAND_UI_CUSTOM_METADATA_SMOKE_TEST");
+    const bool settingsSmokeTest = qEnvironmentVariableIsSet(
+        "ANIME_LAND_UI_SETTINGS_SMOKE_TEST");
+    const bool paginationSmokeTest = qEnvironmentVariableIsSet(
+        "ANIME_LAND_UI_PAGINATION_SMOKE_TEST");
+    const bool longMetadataSmokeTest = qEnvironmentVariableIsSet(
+        "ANIME_LAND_UI_LONG_METADATA_SMOKE_TEST");
     QQmlApplicationEngine engine;
+    QmlNetworkAccessManagerFactory networkFactory(cacheOptions);
+    engine.setNetworkAccessManagerFactory(&networkFactory);
     QObject::connect(
         &engine, &QQmlEngine::warnings,
         [](const QList<QQmlError> &warnings) {
@@ -52,6 +89,17 @@ auto runApplication(QGuiApplication &application,
         });
     engine.rootContext()->setContextProperty(QStringLiteral("uiSmokeTest"),
                                              smokeTest);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("uiAssociationSmokeTest"), associationSmokeTest);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("uiCustomMetadataSmokeTest"),
+        customMetadataSmokeTest);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("uiSettingsSmokeTest"), settingsSmokeTest);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("uiPaginationSmokeTest"), paginationSmokeTest);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("uiLongMetadataSmokeTest"), longMetadataSmokeTest);
     engine.rootContext()->setContextProperty(QStringLiteral("uiFixtureMode"),
                                              fixtureMode);
     engine.rootContext()->setContextProperty(

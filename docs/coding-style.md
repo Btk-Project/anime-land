@@ -78,7 +78,7 @@ return ilias::Err(bangumiError(BangumiErrorCode::InvalidConfiguration, msg));
 struct Neko {
   static constexpr auto value = Object(
       "name",       &Example::name,
-      "totalCount", make_tags<rename_tag<"total_cont">>(&Example::totalCount)
+      "totalCount", make_tags<rename_tag<"total_count">>(&Example::totalCount)
   );
 };
 // clang-format on

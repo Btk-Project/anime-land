@@ -5,11 +5,14 @@
         <file>Theme.qml</file>
         <file>FixtureData.qml</file>
         <file>AppText.qml</file>
+        <file>SelectableText.qml</file>
         <file>AppButton.qml</file>
         <file>AppTextField.qml</file>
+        <file>LocalMetadataEditorDialog.qml</file>
         <file>NavigationItem.qml</file>
         <file>PageHeader.qml</file>
         <file>SectionHeader.qml</file>
+        <file>CoverImage.qml</file>
         <file>SubjectCard.qml</file>
         <file>MediaItemCard.qml</file>
         <file>EpisodeRow.qml</file>

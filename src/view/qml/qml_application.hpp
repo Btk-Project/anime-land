@@ -3,6 +3,7 @@
 class QGuiApplication;
 
 namespace anime_land {
+struct BangumiNetworkCacheOptions;
 class BangumiCalendarViewModel;
 class BangumiBrowserViewModel;
 class LibraryViewModel;
@@ -19,6 +20,7 @@ auto runApplication(QGuiApplication &application,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
-                    bool fixtureMode) -> int;
+                    bool fixtureMode,
+                    const BangumiNetworkCacheOptions &cacheOptions) -> int;
 
 } // namespace anime_land::qml

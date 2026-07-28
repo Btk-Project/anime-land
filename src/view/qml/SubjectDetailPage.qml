@@ -5,9 +5,21 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    property var subject: FixtureData.subjects[0]
+    property var subject: uiFixtureMode ? FixtureData.subjects[0] : ({})
+    property bool summaryExpanded: false
     property string fixtureNotice: ""
-    property var displaySubject: uiFixtureMode
+    property var displaySubject: uiLongMetadataSmokeTest
+            ? ({
+                title: "恋爱游戏世界对路人角色很不友好 第二季",
+                subtitle: "乙女ゲー世界はモブに厳しい世界です2",
+                meta: "2026-07-08 · 2026 / 2026年7月 / Engi / TV",
+                summary: "转生至某个剑与魔法『女性向游戏』世界的前社会人·里昂，在这个极度女尊男卑的世界里，他唯一仅存的武器，就是前世被妹妹半强迫玩过的这款游戏的知识。他凭借运用这份知识的行动，试图在这个不讲理的世界中求生。里昂与本应作为主角立于帅哥军团中心的奥莉薇亚，以及本应成为欺凌她的恶役千金的安洁莉卡，培养出深厚的友情。虽然一路遭到不知为何霸占主角位置的玛丽耶妨碍，最终仍一路晋升至子爵之位。然而，由于里昂大幅改变了游戏的走向，这个世界也渐渐开始显露出原作中未曾描述的另一面。接下来，他必须继续面对贵族社会、冒险与选择带来的复杂后果。",
+                coverUrl: FixtureData.subjects[0].coverUrl,
+                color: FixtureData.subjects[0].color,
+                score: "—",
+                progress: 0
+            })
+            : uiFixtureMode
             ? subject
             : (subjectDetailsViewModel
                ? subjectDetailsViewModel.subject : ({}))
@@ -35,6 +47,7 @@ Item {
     signal libraryRequested()
 
     function loadSubject() {
+        root.summaryExpanded = false
         if (uiFixtureMode || !subjectDetailsViewModel)
             return
         if (root.subject && root.subject.subjectId > 0)
@@ -45,10 +58,240 @@ Item {
             subjectDetailsViewModel.clear()
     }
 
+    Component {
+        id: episodePaginationComponent
+
+        Rectangle {
+            id: paginationRoot
+            readonly property int displayedPage: uiPaginationSmokeTest
+                    ? 17 : (subjectDetailsViewModel
+                            ? subjectDetailsViewModel.currentEpisodePage : 0)
+            readonly property int displayedPageCount: uiPaginationSmokeTest
+                    ? 50 : (subjectDetailsViewModel
+                            ? subjectDetailsViewModel.episodePageCount : 0)
+            implicitHeight: 58
+            radius: Theme.radius
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                AppButton {
+                    text: "正序"
+                    primary: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel
+                                        .episodeSortDescending)
+                    enabled: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel.loadingMore)
+                    onClicked: {
+                        if (subjectDetailsViewModel)
+                            subjectDetailsViewModel
+                                .setEpisodeSortDescending(false)
+                    }
+                }
+
+                AppButton {
+                    text: "倒序"
+                    primary: subjectDetailsViewModel
+                             && subjectDetailsViewModel
+                                    .episodeSortDescending
+                    enabled: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel.loadingMore)
+                    onClicked: {
+                        if (subjectDetailsViewModel)
+                            subjectDetailsViewModel
+                                .setEpisodeSortDescending(true)
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                AppText {
+                    text: "第 " + paginationRoot.displayedPage + " / "
+                          + paginationRoot.displayedPageCount + " 页"
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.captionSize
+                }
+
+                AppButton {
+                    text: "上一页"
+                    enabled: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel.loadingMore
+                                 && subjectDetailsViewModel
+                                        .currentEpisodePage > 1)
+                    onClicked: {
+                        if (subjectDetailsViewModel)
+                            subjectDetailsViewModel.previousEpisodePage()
+                    }
+                }
+
+                AppButton {
+                    text: "下一页"
+                    enabled: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel.loadingMore
+                                 && subjectDetailsViewModel.currentEpisodePage
+                                    < subjectDetailsViewModel.episodePageCount)
+                    onClicked: {
+                        if (subjectDetailsViewModel)
+                            subjectDetailsViewModel.nextEpisodePage()
+                    }
+                }
+
+                AppTextField {
+                    id: episodePageField
+                    Layout.preferredWidth: 74
+                    Layout.preferredHeight: 38
+                    placeholderText: "页码"
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    validator: IntValidator {
+                        bottom: 1
+                        top: uiPaginationSmokeTest ? 50 : subjectDetailsViewModel
+                             ? Math.max(1,
+                                 subjectDetailsViewModel.episodePageCount)
+                             : 1
+                    }
+                    enabled: uiPaginationSmokeTest
+                             || (subjectDetailsViewModel
+                                 && !subjectDetailsViewModel.loadingMore)
+                    onAccepted: {
+                        if (acceptableInput && subjectDetailsViewModel)
+                            subjectDetailsViewModel.goToEpisodePage(
+                                Number(text))
+                    }
+                }
+
+                AppButton {
+                    text: subjectDetailsViewModel
+                          && subjectDetailsViewModel.loadingMore
+                          ? "读取中…" : "跳转"
+                    enabled: episodePageField.acceptableInput
+                             && (uiPaginationSmokeTest
+                                 || (subjectDetailsViewModel
+                                     && !subjectDetailsViewModel.loadingMore))
+                    onClicked: {
+                        Qt.inputMethod.commit()
+                        if (subjectDetailsViewModel)
+                            subjectDetailsViewModel.goToEpisodePage(
+                                Number(episodePageField.text))
+                    }
+                }
+            }
+        }
+    }
+
     Component.onCompleted: root.loadSubject()
     StackView.onActivated: root.loadSubject()
 
+    Timer {
+        interval: 180
+        running: uiPaginationSmokeTest
+        repeat: false
+        onTriggered: detailsFlickable.contentY = Math.max(
+            0, episodesHeader.y - Theme.pageMargin)
+    }
+
+    Connections {
+        target: libraryViewModel
+        ignoreUnknownSignals: true
+
+        function onLocalMetadataSaved(subjectId) {
+            if (!root.displaySubject
+                    || subjectId !== root.displaySubject.subjectId)
+                return
+            metadataEditor.close()
+            subjectDetailsViewModel.openSubject(subjectId)
+        }
+
+        function onLocalMetadataDeleted(subjectId) {
+            if (!root.displaySubject
+                    || subjectId !== root.displaySubject.subjectId)
+                return
+            removeMetadataDialog.close()
+            root.backRequested()
+        }
+    }
+
+    LocalMetadataEditorDialog {
+        id: metadataEditor
+        editMode: true
+        busy: !libraryViewModel || libraryViewModel.associating
+
+        onSaveRequested: function(displayTitle, originalTitle, summary,
+                                  coverUrl, episodeTitle, episodeNumber) {
+            if (libraryViewModel && root.displaySubject)
+                libraryViewModel.updateLocalMetadata(
+                    root.displaySubject.subjectId, displayTitle,
+                    originalTitle, summary, coverUrl)
+        }
+    }
+
+    Dialog {
+        id: removeMetadataDialog
+        anchors.centerIn: parent
+        width: Math.min(480, root.width - Theme.pageMargin * 2)
+        modal: true
+        title: "删除数据库元数据条目"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        padding: 20
+
+        palette.window: Theme.surfaceRaised
+        palette.windowText: Theme.text
+        palette.button: Theme.surface
+        palette.buttonText: Theme.text
+        palette.highlight: Theme.accent
+        palette.highlightedText: Theme.accentText
+
+        background: Rectangle {
+            radius: Theme.radius
+            color: Theme.surfaceRaised
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        onAccepted: {
+            if (libraryViewModel && root.displaySubject)
+                libraryViewModel.deleteLocalMetadata(
+                    root.displaySubject.subjectId)
+        }
+
+        Column {
+            width: removeMetadataDialog.availableWidth
+            spacing: 10
+
+            AppText {
+                width: parent.width
+                text: root.displaySubject
+                      ? "确定删除数据库条目“"
+                        + root.displaySubject.title + "”？"
+                      : "确定删除这个数据库条目？"
+                color: Theme.text
+                font.pixelSize: Theme.bodySize
+                font.weight: Font.DemiBold
+                wrapMode: Text.Wrap
+            }
+
+            AppText {
+                width: parent.width
+                text: "本地章节和媒体关联会一并移除，视频文件不会删除。来自 Bangumi 的条目以后仍可重新获取。"
+                color: Theme.textMuted
+                font.pixelSize: Theme.captionSize
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
     Flickable {
+        id: detailsFlickable
         anchors.fill: parent
         clip: true
         contentWidth: width
@@ -75,7 +318,11 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: !uiFixtureMode && subjectDetailsViewModel
                           && subjectDetailsViewModel.loading
-                          ? "正在读取本地条目…" : "条目详情"
+                          ? "正在读取条目…"
+                          : !uiFixtureMode && subjectDetailsViewModel
+                            && subjectDetailsViewModel.refreshing
+                            ? "条目详情 · 正在后台刷新 Bangumi"
+                            : "条目详情"
                     color: Theme.textFaint
                     font.pixelSize: Theme.captionSize
                 }
@@ -139,8 +386,12 @@ Item {
             }
 
             Rectangle {
+                id: subjectOverview
+                property int contentPadding: 22
                 width: parent.width
-                height: 278
+                height: Math.max(278,
+                                 overviewDetails.implicitHeight
+                                 + contentPadding * 2)
                 visible: root.contentReady
                 radius: Theme.radiusLarge
                 color: Theme.surface
@@ -149,68 +400,49 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 22
+                    anchors.margins: subjectOverview.contentPadding
                     spacing: 24
 
-                    Rectangle {
+                    CoverImage {
                         Layout.preferredWidth: 164
                         Layout.preferredHeight: 232
                         Layout.maximumHeight: 232
-                        Layout.alignment: Qt.AlignVCenter
+                        Layout.alignment: Qt.AlignTop
                         radius: Theme.radius
-                        color: root.displaySubject.color || Theme.surfaceRaised
-                        clip: true
-
-                        Image {
-                            id: coverImage
-                            anchors.fill: parent
-                            source: root.displaySubject.coverUrl || ""
-                            sourceSize: Qt.size(
-                                Math.ceil(width * Screen.devicePixelRatio),
-                                Math.ceil(height * Screen.devicePixelRatio))
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            mipmap: true
-                            autoTransform: true
-                            visible: status === Image.Ready
-                        }
-
-                        AppText {
-                            anchors.centerIn: parent
-                            text: root.displaySubject.title
-                                  ? root.displaySubject.title.slice(0, 1) : "?"
-                            visible: !coverImage.visible
-                            color: "#e2e5e7"
-                            opacity: 0.75
-                            font.pixelSize: 64
-                            font.weight: Font.Light
-                        }
+                        source: root.displaySubject.coverUrl || ""
+                        title: root.displaySubject.title || ""
+                        fallbackColor: root.displaySubject.color
+                                       || Theme.surfaceRaised
                     }
 
                     Column {
+                        id: overviewDetails
                         Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignVCenter
+                        Layout.alignment: Qt.AlignTop
                         spacing: 10
 
-                        AppText {
+                        SelectableText {
                             width: parent.width
                             text: root.displaySubject.title || ""
                             color: Theme.text
                             font.pixelSize: 28
                             font.weight: Font.DemiBold
-                            elide: Text.ElideRight
+                            wrapMode: TextEdit.WordWrap
+                            clip: true
+                            height: Math.min(implicitHeight, 76)
                         }
 
-                        AppText {
+                        SelectableText {
                             width: parent.width
                             text: root.displaySubject.subtitle || ""
                             color: Theme.textMuted
                             font.pixelSize: Theme.bodySize
-                            elide: Text.ElideRight
+                            wrapMode: TextEdit.WordWrap
+                            clip: true
+                            height: Math.min(implicitHeight, 48)
                         }
 
-                        AppText {
+                        SelectableText {
                             width: parent.width
                             text: uiFixtureMode
                                   ? (root.displaySubject.meta + "  ·  Bangumi "
@@ -218,19 +450,32 @@ Item {
                                   : (root.displaySubject.meta || "本地目录条目")
                             color: Theme.textMuted
                             font.pixelSize: Theme.captionSize
-                            elide: Text.ElideRight
+                            wrapMode: TextEdit.WordWrap
+                            clip: true
+                            height: Math.min(implicitHeight, 44)
                         }
 
-                        AppText {
+                        SelectableText {
+                            id: summaryText
                             width: parent.width
                             text: root.displaySubject.summary || "暂无简介"
                             color: Theme.text
                             opacity: 0.9
                             font.pixelSize: Theme.bodySize
-                            lineHeight: 1.35
                             wrapMode: Text.WordWrap
-                            maximumLineCount: 5
-                            elide: Text.ElideRight
+                            height: root.summaryExpanded
+                                    ? implicitHeight
+                                    : Math.min(implicitHeight, 98)
+                            clip: true
+                        }
+
+                        AppButton {
+                            visible: summaryText.implicitHeight > 98
+                            text: root.summaryExpanded
+                                  ? "收起简介" : "展开完整简介"
+                            quiet: true
+                            onClicked: root.summaryExpanded =
+                                       !root.summaryExpanded
                         }
 
                         Row {
@@ -274,6 +519,44 @@ Item {
                             }
 
                             AppButton {
+                                visible: uiLongMetadataSmokeTest
+                                         || !uiFixtureMode
+                                text: "编辑元数据"
+                                enabled: libraryViewModel
+                                         && subjectDetailsViewModel
+                                         && !libraryViewModel.associating
+                                         && !subjectDetailsViewModel.loading
+                                         && !subjectDetailsViewModel.refreshing
+                                onClicked: {
+                                    metadataEditor.metadata = ({
+                                        subjectId:
+                                            root.displaySubject.subjectId,
+                                        displayTitle:
+                                            root.displaySubject.title || "",
+                                        originalTitle:
+                                            root.displaySubject.subtitle || "",
+                                        summary:
+                                            root.displaySubject.summary || "",
+                                        coverUrl:
+                                            root.displaySubject.coverUrl || ""
+                                    })
+                                    metadataEditor.open()
+                                }
+                            }
+
+                            AppButton {
+                                visible: uiLongMetadataSmokeTest
+                                         || !uiFixtureMode
+                                text: "删除条目"
+                                enabled: libraryViewModel
+                                         && subjectDetailsViewModel
+                                         && !libraryViewModel.associating
+                                         && !subjectDetailsViewModel.loading
+                                         && !subjectDetailsViewModel.refreshing
+                                onClicked: removeMetadataDialog.open()
+                            }
+
+                            AppButton {
                                 visible: uiFixtureMode
                                 text: "收藏状态"
                                 quiet: true
@@ -282,7 +565,7 @@ Item {
                             }
                         }
 
-                        AppText {
+                        SelectableText {
                             width: parent.width
                             text: root.statusMessage
                             color: !uiFixtureMode && subjectDetailsViewModel
@@ -292,24 +575,43 @@ Item {
                             font.pixelSize: Theme.captionSize
                             visible: root.statusMessage.length > 0
                             wrapMode: Text.Wrap
+                            height: visible ? implicitHeight : 0
                         }
                     }
                 }
             }
 
             SectionHeader {
+                id: episodesHeader
                 width: parent.width
                 visible: root.contentReady
                 title: "章节"
-                detail: uiFixtureMode
+                detail: uiPaginationSmokeTest
+                        ? "第 17 / 50 页 · 本页 24 / 1191 个数据库章节"
+                        : uiFixtureMode
                         ? root.episodeModel.length + " 个 fixture 章节"
-                        : root.episodeModel.length + " / "
+                        : "第 "
+                          + (subjectDetailsViewModel
+                             ? subjectDetailsViewModel.currentEpisodePage : 0)
+                          + " / "
+                          + (subjectDetailsViewModel
+                             ? subjectDetailsViewModel.episodePageCount : 0)
+                          + " 页 · 本页 " + root.episodeModel.length + " / "
                           + (subjectDetailsViewModel
                              ? subjectDetailsViewModel.totalEpisodeCount : 0)
                           + " 个数据库章节 · "
                           + (subjectDetailsViewModel
                              ? subjectDetailsViewModel.playableEpisodeCount : 0)
-                          + " 个可播放"
+                          + " 个本页可播放"
+            }
+
+            Loader {
+                width: parent.width
+                visible: uiPaginationSmokeTest
+                         || (!uiFixtureMode && root.contentReady
+                             && subjectDetailsViewModel
+                             && subjectDetailsViewModel.episodePageCount > 1)
+                sourceComponent: visible ? episodePaginationComponent : null
             }
 
             Column {
@@ -342,16 +644,12 @@ Item {
                 }
             }
 
-            AppButton {
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: !uiFixtureMode && subjectDetailsViewModel
-                         && subjectDetailsViewModel.hasMoreEpisodes
-                text: subjectDetailsViewModel
-                      && subjectDetailsViewModel.loadingMore
-                      ? "正在加载…" : "再加载 24 章"
-                enabled: subjectDetailsViewModel
-                         && !subjectDetailsViewModel.loadingMore
-                onClicked: subjectDetailsViewModel.loadMoreEpisodes()
+            Loader {
+                width: parent.width
+                visible: uiPaginationSmokeTest
+                         || (!uiFixtureMode && subjectDetailsViewModel
+                             && subjectDetailsViewModel.episodePageCount > 1)
+                sourceComponent: visible ? episodePaginationComponent : null
             }
 
             Rectangle {
