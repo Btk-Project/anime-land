@@ -1,6 +1,6 @@
 # anime-land 当前工作接力
 
-> 更新时间：2026-07-27（Asia/Shanghai）  
+> 更新时间：2026-07-28（Asia/Shanghai）
 > 用途：新对话开始时先读本文件，再读 `docs/arch.md` 和对应专题文档。  
 > 状态：工作区包含尚未提交的连续迁移修改；不要假设所有 dirty files 都属于单一功能。
 
@@ -36,16 +36,16 @@ main.cpp 是当前 Composition Root；后续才抽到 src/runtime/。
 
 - `BangumiCalendarViewModel`：真实 Bangumi 每日放送；
 - `LibraryViewModel`：真实本地数据库、文件选择导入、Bangumi 搜索/章节读取、手动关联/
-  解除、系统播放器入口，以及已关联媒体的 Subject → Episode → SourceItem
+  解除、内置播放器入口，以及已关联媒体的 Subject → Episode → SourceItem
   层级投影；
 - `SubjectDetailsViewModel`：从 CatalogStore 读取本地条目/章节，并与 LibraryStore 的
-  `EpisodeMediaLink`、`SourceItem` 合并成详情 DTO；支持从章节调用系统播放器。
+  `EpisodeMediaLink`、`SourceItem` 合并成详情 DTO；支持从章节调用内置播放器。
 - `BangumiBrowserViewModel`：公开动画搜索（24 条分页）、系统凭据登录恢复、OAuth 登录/
   退出和真实用户收藏分页；
 - `ApplicationSettingsViewModel`：持久化跟随系统/深色/浅色主题、Bangumi OAuth 与代理
   配置；同步更新 Qt 全局 palette，Linux 文件对话框使用受控的 Quick fallback 样式。
 
-首页的最近加入/继续观看和内置播放器仍主要是 fixture。Bangumi 主搜索页与收藏页在真实
+首页的最近加入/继续观看仍主要是 fixture；内置播放器已接通真实本地媒体。Bangumi 主搜索页与收藏页在真实
 模式已不再回退 fixture。条目详情在真实模式
 不再读取 fixture：已落入 CatalogStore 的条目显示数据库元数据、章节及关联媒体；尚未
 落库的每日放送条目会先读取 Bangumi 完整 Subject/全部章节并持久化，再从数据库显示。
@@ -88,13 +88,13 @@ MediaItemCard 右键“关联章节”
 MediaItemCard 双击/右键“播放”
     → LibraryViewModel::playMedia(SourceItemId)
     → Model 解析并安全校验 local-file descriptor
-    → 系统默认播放器
+    → PlaybackSession/nekoav → RGBA mailbox → QQuickRhiItem/QRhi
 
 MediaItemCard 右键“查看条目详情”
     → SubjectDetailsViewModel::openSubject(SubjectId)
     → CatalogStore Subject/Episode + LibraryStore EpisodeMediaLink/SourceItem
     → 数据库条目详情和章节列表
-    → 章节“播放”按 EpisodeId 解析首个关联媒体并交给系统播放器
+    → 章节“播放”按 EpisodeId 解析首个关联媒体并交给内置播放器
 
 每日放送卡片点击
     → Details 快照 6 小时内直接读库，过期后请求远端
@@ -203,10 +203,10 @@ CatalogStore，最终只使用本地 `EpisodeId` 和 `SourceItemId` 写入 `Manu
 也绝不回退到 fixture 假数据。Episode 按 Bangumi 外部 ID upsert，因此过期刷新会在
 原本地 `EpisodeId` 上补全后续公布的标题/时长，不会生成重复章节，也不会丢失已有媒体关联。
 
-本地播放也已形成第一条可用闭环，但当前是系统播放器过渡方案，不是内置 nekoav：双击
-卡片或右键“播放”只向 Model 传 `SourceItemId`。Model 校验 local-file descriptor 版本、
-JSON、相对路径、canonical 目录边界、文件存在性和可读性后，才调用系统默认播放器。
-真实路径不进入 QML；暂停、Seek、内置视频输出和进度仍待 PlaybackSession。
+本地播放已形成内置闭环：双击卡片或右键“播放”只向 Model 传 `SourceItemId`。Model 校验
+local-file descriptor 版本、JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
+再交给 `PlaybackSession`；真实路径不进入 QML。画面经 nekoav RGBA renderer、容量 1 mailbox
+和 `QQuickRhiItem`/QRhi 输出，Play/Pause/Seek/Stop 与快照进度已接通。
 
 关联表外键引用 CatalogStore 的 `episodes`，因此主程序和测试必须先打开
 `CatalogStore`，再打开 `LibraryStore`。`main.cpp` 已按此顺序装配并在数据库关闭前反序
@@ -226,6 +226,12 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
 
 ### Model / Persistence
 
+- `.gitmodules`、`third_party/nekoav`、`third_party/xmake.lua`：nekoav 源码级 submodule、
+  `main` 跟踪信息与父工程薄构建适配；父工程只构建上游库源码，不导入其测试和 Widgets
+  示例；
+- `src/model/playback/`：应用自有命令/快照、串行 `PlaybackSession` 和真实 nekoav 适配；
+- `src/presentation/playback/`、`src/view/playback/`：QML 播放控制器、容量 1 RGBA mailbox 与
+  `QQuickRhiItem`/QRhi 纹理上传；
 - `src/model/library/error.hpp`：Library 错误码；
 - `src/model/library/media.hpp/.cpp`：资源、子项、发现快照和校验；
 - `src/model/library/local_media_import.hpp/.cpp`：显式导入/移除、关联编排、列表投影和安全
@@ -247,6 +253,8 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
 - `src/view/qml/LibraryPage.qml`：真实模式文件选择、Subject/Episode/媒体文件层级、
   未关联父目录待整理区、Bangumi 关联 Dialog 与移除确认；
 - `src/view/qml/MediaItemCard.qml`：本地媒体卡片、双击播放与右键操作菜单；
+- `src/view/qml/image_network_access_manager.*`：QML 远端封面专用网络管理器；禁用该通道的
+  HTTP/2，规避批量图片共享 H2 连接时的无效流错误，不改变 Bangumi API/OAuth 网络策略；
 - `src/view/qml/SubjectDetailPage.qml`：fixture 模式保留静态详情；真实模式只消费
   `SubjectDetailsViewModel`；
 - `src/view/qml/qml_application.*`：注入 Calendar、Library 与 SubjectDetails ViewModel；
@@ -265,11 +273,14 @@ JSON、相对路径、canonical 目录边界、文件存在性和可读性后，
   待整理分流、关联 DTO、错误和真实 QML URL 边界；
 - `tests/unit/presentation/test_subject_details_view_model.cpp`：数据库详情映射、Bangumi
   目录同步、同步错误和按章节播放；
+- `tests/unit/view/qml/test_image_network_access_manager.cpp`：验证 QML 封面请求在发出前禁用
+  HTTP/2 协商与 direct H2；
+- `tests/unit/media/`：覆盖 nekoav 链接边界、PlaybackSession 生命周期和仓库媒体 fixture；
 - `tests/xmake.lua`：Presentation 测试目前链接 `QtQml`，供 URL 边界测试使用。
 
 ## 5. 最近验证结果
 
-本轮手动关联、数据库条目详情和系统播放器过渡入口后的验证：
+此前手动关联与数据库详情链路的验证：
 
 ```text
 xmake run test_library_foundation -> 8/8 passed
@@ -312,15 +323,29 @@ Library 相关 Store/ViewModel 测试均通过；其中关联集成测试覆盖�
 媒体库 → 详情 B 使用 StackView 历史，返回激活旧详情时会按该页身份重新加载，避免共享
 ViewModel 显示错条目。
 
+用户随后报告 Bangumi 封面先加载一部分，之后 Qt 6.9.1 输出
+`qhttp2connection.cpp: Connection error: DATA on invalid stream (11)`。旧日志确认错误发生在
+QML 批量封面请求使用的 HTTP/2 连接，而不是图片解码或 Bangumi JSON。现已让 QML 封面专用
+`ImageNetworkAccessManager` 在请求调度前设置 `Http2AllowedAttribute=false` 并清除 direct
+H2，仅该通道回退 HTTP/1.1；Bangumi API/OAuth 管理器和已有图片磁盘缓存保持不变。
+`test_image_network_access_manager` 1/1、Calendar ViewModel 3/3、Browser ViewModel 2/2 和
+`xmake -j4 main` 均通过；真实首页首屏封面加载成功，修复后的启动日志未再出现 H2 connection
+error。完整 Bangumi 网格仍建议由用户实际滚动/切换星期复测一次。
+
+`BusyStudent/nekoav` 已作为跟踪 `main` 的源码 submodule 接入，当前 gitlink 为
+`1a4d4fe3d2d8de242df62859654128c491a5e3e7`；父工程使用薄适配，不导入上游测试和 Widgets
+示例。Playback 细分完成状态统一维护在 `docs/plan.md`；内置 RGBA/QRhi 画面输出和播放器
+基础控制已经接通。上游 MSVC 导出 ABI 警告仍待在 nekoav 仓库修正。
+
 ## 6. 已知边界与下一步
 
 当前完成的是“导入、未关联目录整理、手动关联/解除、Subject → Episode → 媒体
-层级、数据库条目详情/章节、真实 Bangumi 搜索/收藏/账户、可持久化设置、调用系统播放器
+层级、数据库条目详情/章节、真实 Bangumi 搜索/收藏/账户、可持久化设置、内置本地播放
 和安全移除”。尚未实现：
 
 1. 文件名解析/自动匹配；
 2. 递归目录扫描与完整快照的失效语义；
-3. 内置 `PlaybackSession`、nekoav 输出、控制和进度保存；
+3. 补全音量、轨道和播放进度保存；
 4. 最近播放和继续观看；
 5. 把 `main.cpp` 装配抽成 `src/runtime/AppRuntime`。
 
@@ -333,7 +358,7 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 
 1. 用真实 Bangumi 搜索替换 Bangumi 页搜索 fixture，并复用相同的点击落库链路；
 2. 实现文件名 matcher，自动结果必须可确认且不能覆盖手动关联；
-3. 建立 PlaybackSession 并用 nekoav 替换系统播放器过渡入口；
+3. 把现有 GUI 装配收进 AppRuntime，并补全播放器剩余控制与进度持久化；
 4. 增加播放进度和最近播放。
 
 ## 7. 操作注意事项
@@ -343,6 +368,8 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 - 用户已批准把 `D:/CodeProject/anime-land` 精确加入当前账户的全局 Git
   `safe.directory`，现在 `git status`/`git diff` 可用；不要改成 `*` 通配，也不要删除或
   覆盖用户已有 dirty changes。
+- `D:/CodeProject/anime-land/third_party/nekoav` 作为独立 submodule 仓库也已精确加入
+  `safe.directory`；不要改成 `*`。其他新 submodule 仍需单独确认路径。
 - 不要把 Bangumi DTO、SQL Record、provider descriptor 或真实文件路径暴露成 QML
   核心身份；QML 使用本地强类型 ID 映射后的 UI DTO。
 - 不要把 Bangumi 每日放送写入 LibraryStore；它仍是短期远端浏览数据。
@@ -354,8 +381,7 @@ Bangumi ID 交给 Model；Model 负责先落库再返回本地 `SubjectId`。`De
 
 > 先完整阅读 `docs/HANDOFF.md`、`docs/arch.md` 和
 > `docs/library/library_design.md`，不要重新猜架构。Windows MKV URL、未关联父目录待整理区和右键
-> 安全移除、Bangumi 章节读取、手动 EpisodeMediaLink 关联/解除和系统播放器过渡入口已经
+> 安全移除、Bangumi 章节读取、手动 EpisodeMediaLink 关联/解除和内置播放器入口已经
 > 落地；已关联媒体库已按 Subject → Episode → 媒体文件显示。每日放送点击会把完整
 > Subject/Episode 落入 Catalog，再由真实详情读取 Catalog/Library 数据库，不会显示 fixture。
-> 继续做文件名 matcher，或开始
-> PlaybackSession/nekoav。构建一律 `-j4`。
+> 继续做文件名 matcher，或补全播放器音量、轨道与进度持久化。构建一律 `-j4`。

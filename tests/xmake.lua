@@ -42,6 +42,10 @@ local function default_test_config(file)
     elseif group == "cli" then
         config.group = "view"
         config.deps = {"view"}
+    elseif group == "qml" then
+        config.group = "view"
+        config.deps = {"view"}
+        config.qt_frameworks = {"QtCore", "QtNetwork"}
     elseif group == "persistence" then
         config.run_timeout = 10000
         config.deps = {"model"}
@@ -50,6 +54,14 @@ local function default_test_config(file)
         config.run_timeout = 5000
         config.deps = {"model"}
         config.qt_frameworks = {"QtCore"}
+    elseif group == "media" then
+        config.run_timeout = 5000
+        config.deps = {"model"}
+        config.qt_frameworks = {"QtCore"}
+    elseif group == "playback" then
+        config.run_timeout = 10000
+        config.deps = {"view"}
+        config.qt_frameworks = {"QtCore", "QtGui", "QtQml", "QtQuick"}
     -- else
         -- append_values(config.files, "../src/proto_base.cpp", "../src/jsonrpc.cpp")
     end

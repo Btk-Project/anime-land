@@ -9,6 +9,11 @@ class BangumiBrowserViewModel;
 class LibraryViewModel;
 class SubjectDetailsViewModel;
 class ApplicationSettingsViewModel;
+class PlaybackController;
+}
+
+namespace anime_land::qml {
+class PlaybackVideoSurface;
 }
 
 namespace anime_land::qml {
@@ -20,6 +25,8 @@ auto runApplication(QGuiApplication &application,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
+                    PlaybackController *playbackController,
+                    PlaybackVideoSurface *playbackVideoSurface,
                     bool fixtureMode,
                     const BangumiNetworkCacheOptions &cacheOptions) -> int;
 

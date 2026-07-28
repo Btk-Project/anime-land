@@ -1,10 +1,14 @@
 #include "view/qml/qml_application.hpp"
+#include "view/qml/image_network_access_manager.hpp"
+#include "view/playback/playback_video_surface.hpp"
+#include "view/playback/video_output_item.hpp"
 
 #include "presentation/bangumi/calendar_view_model.hpp"
 #include "presentation/bangumi/browser_view_model.hpp"
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
 #include "presentation/settings_view_model.hpp"
+#include "presentation/playback/playback_controller.hpp"
 #include "model/bangumi/network_cache.hpp"
 
 #include <QCoreApplication>
@@ -13,6 +17,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlNetworkAccessManagerFactory>
+#include <qqml.h>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QPalette>
@@ -37,7 +42,7 @@ public:
         : mOptions(std::move(options)) {}
 
     auto create(QObject *parent) -> QNetworkAccessManager * override {
-        auto *network = new QNetworkAccessManager(parent);
+        auto *network = new ImageNetworkAccessManager(parent);
         installBangumiNetworkCache(*network, mOptions,
                                    NetworkCachePartition::Images);
         return network;
@@ -55,9 +60,13 @@ auto runApplication(QGuiApplication &application,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
+                    PlaybackController *playbackController,
+                    PlaybackVideoSurface *playbackVideoSurface,
                     bool fixtureMode,
                     const BangumiNetworkCacheOptions &cacheOptions) -> int {
     initializeAnimeLandQmlResources();
+    qmlRegisterType<VideoOutputItem>("AnimeLand.Playback", 1, 0,
+                                     "VideoOutputItem");
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 #if defined(_WIN32)
     auto applicationFont = application.font();
@@ -117,9 +126,24 @@ auto runApplication(QGuiApplication &application,
         subjectDetailsViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("settingsViewModel"), settingsViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("playbackController"), playbackController);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("playbackVideoSurface"), playbackVideoSurface);
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AnimeLand/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         return 3;
+    }
+
+    const QString playbackSmokeFile =
+        qEnvironmentVariable("ANIME_LAND_PLAYBACK_SMOKE_FILE");
+    if (playbackController != nullptr && !playbackSmokeFile.isEmpty()) {
+        QTimer::singleShot(
+            0, playbackController,
+            [playbackController, playbackSmokeFile] {
+                playbackController->openMedia(
+                    QUrl::fromLocalFile(playbackSmokeFile));
+            });
     }
 
     if (smokeTest) {

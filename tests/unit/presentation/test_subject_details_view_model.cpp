@@ -244,7 +244,7 @@ TEST(SubjectDetailsViewModel, PlaysFirstLinkedEpisodeByLocalIdentity) {
 
     EXPECT_EQ(playedEpisode, EpisodeId {31});
     EXPECT_EQ(viewModel.noticeMessage(),
-              QStringLiteral("已交给系统默认播放器打开"));
+              QStringLiteral("已在内置播放器中打开"));
 }
 
 TEST(SubjectDetailsViewModel,

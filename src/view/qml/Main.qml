@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 ApplicationWindow {
     id: root
@@ -20,6 +21,8 @@ ApplicationWindow {
     property int currentSection: 0
     property var selectedSubject: null
     property int smokeStep: 0
+    property bool playerFullScreen: false
+    property int visibilityBeforePlayerFullScreen: Window.Windowed
 
     palette.window: Theme.background
     palette.windowText: Theme.text
@@ -52,6 +55,8 @@ ApplicationWindow {
     }
 
     function showRoot(section) {
+        if (playerFullScreen)
+            setPlayerFullScreen(false)
         currentSection = section
         pageStack.clear()
         if (section === 0)
@@ -78,6 +83,44 @@ ApplicationWindow {
         pageStack.push(playerComponent, {"subject": subject})
     }
 
+    function setPlayerFullScreen(enabled) {
+        if (playerFullScreen === enabled)
+            return
+
+        if (enabled) {
+            visibilityBeforePlayerFullScreen = visibility
+            playerFullScreen = true
+            showFullScreen()
+        }
+        else {
+            playerFullScreen = false
+            if (visibilityBeforePlayerFullScreen === Window.Maximized)
+                showMaximized()
+            else
+                showNormal()
+        }
+    }
+
+    Connections {
+        target: playbackController
+        enabled: !uiFixtureMode && playbackController
+
+        function onOpenRequested(title) {
+            const currentPage = pageStack.currentItem
+            if (currentPage && currentPage.objectName === "playerPage")
+                return
+
+            const episodes = currentPage
+                    && currentPage.objectName === "subjectDetailPage"
+                    ? currentPage.episodeModel : []
+            root.openPlayer({
+                "title": title,
+                "episode": "本地媒体",
+                "episodes": episodes
+            })
+        }
+    }
+
     function goBack() {
         if (pageStack.depth > 1)
             pageStack.pop()
@@ -96,8 +139,10 @@ ApplicationWindow {
         spacing: 0
 
         Rectangle {
-            Layout.preferredWidth: 196
+            id: appSidebar
+            Layout.preferredWidth: visible ? 196 : 0
             Layout.fillHeight: true
+            visible: !root.playerFullScreen
             color: Theme.sidebar
             border.width: 1
             border.color: Theme.border
@@ -258,7 +303,15 @@ ApplicationWindow {
     Component {
         id: playerComponent
         PlayerPage {
+            fullScreen: root.playerFullScreen
             onBackRequested: root.goBack()
+            onFullScreenRequested: enabled =>
+                root.setPlayerFullScreen(enabled)
+            onPlayEpisodeRequested: episode => {
+                if (!uiFixtureMode && subjectDetailsViewModel
+                        && episode.linked)
+                    subjectDetailsViewModel.playEpisode(episode.id)
+            }
         }
     }
 

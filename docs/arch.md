@@ -230,6 +230,12 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 `VideoOutputItem` 是 View 与 Renderer 的窄适配边界。具体采用哪一种 Qt Quick
 场景图/QRhi 接入 API，应在实现前通过 ADR 确认，同时满足 Qt 版本兼容要求。
 
+当前仓库已把 `BusyStudent/nekoav` 作为跟踪 `main` 的源码级 Git submodule 固定在
+`third_party/nekoav`。父工程通过 `third_party/xmake.lua` 只构建上游 `include/` 与 `src/`
+为共享库 target，不导入 nekoav 自身的测试、compile-commands 规则或 Qt Widgets 示例；
+`model` target 已建立构建依赖。该状态只代表依赖与 ABI 边界接通，尚未实现
+`PlaybackSession`、Qt Quick `VideoOutputItem` 或替换当前系统播放器入口。
+
 ## 7. 当前实现与迁移
 
 第一批物理迁移已经完成；构建 target 已从细粒度子模块库收敛为架构层级的

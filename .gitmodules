@@ -1,0 +1,4 @@
+[submodule "third_party/nekoav"]
+	path = third_party/nekoav
+	url = https://github.com/BusyStudent/nekoav.git
+	branch = main

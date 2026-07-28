@@ -6,6 +6,7 @@ Button {
 
     property bool primary: false
     property bool quiet: false
+    property bool onDark: false
 
     hoverEnabled: true
     implicitHeight: 38
@@ -16,8 +17,10 @@ Button {
     contentItem: AppText {
         text: control.text
         color: !control.enabled
-               ? Theme.textFaint
-               : (control.primary ? Theme.accentText : Theme.text)
+               ? (control.onDark ? "#6f767d" : Theme.textFaint)
+               : (control.onDark ? "#eceff1"
+                                 : (control.primary
+                                    ? Theme.accentText : Theme.text))
         font.pixelSize: Theme.bodySize
         font.weight: control.primary ? Font.DemiBold : Font.Normal
         horizontalAlignment: Text.AlignHCenter
@@ -32,6 +35,15 @@ Button {
                       ? Theme.border
                       : (control.primary ? Theme.accent : Theme.border)
         color: {
+            if (control.onDark) {
+                if (!control.enabled)
+                    return "#151719"
+                if (control.down)
+                    return "#3a4147"
+                if (control.hovered)
+                    return "#2a3035"
+                return control.quiet ? "transparent" : "#202428"
+            }
             if (!control.enabled)
                 return Theme.surface
             if (control.down)

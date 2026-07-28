@@ -1,5 +1,29 @@
 # anime-land
 
+## 获取源码
+
+nekoav 以源码级 Git submodule 位于 `third_party/nekoav`，主仓库固定可复现提交，
+`.gitmodules` 同时记录其跟踪分支为 `main`：
+
+```bash
+git clone --recurse-submodules <anime-land-url>
+```
+
+已有工作区补齐依赖：
+
+```bash
+git submodule update --init --recursive
+```
+
+需要同步开发 nekoav 时，在子模块中切到 `main`，正常提交/推送，再回到主仓库更新
+gitlink：
+
+```bash
+git -C third_party/nekoav switch main
+git -C third_party/nekoav pull --ff-only
+git add third_party/nekoav
+```
+
 ## Qt 版本
 
 - 源码兼容边界为 Qt 6.2 至 Qt 6.x；当前本机验证版本为 Qt 6.8.2。

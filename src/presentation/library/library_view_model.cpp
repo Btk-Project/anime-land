@@ -937,7 +937,7 @@ auto LibraryViewModel::play(SourceItemId item, std::uint64_t generation)
         co_return;
     }
     mErrorMessage.clear();
-    mNoticeMessage = QStringLiteral("已交给系统默认播放器打开");
+    mNoticeMessage = QStringLiteral("已在内置播放器中打开");
     emit stateChanged();
 }
 

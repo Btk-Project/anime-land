@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Item {
     id: root
+    objectName: "subjectDetailPage"
 
     property var subject: uiFixtureMode ? FixtureData.subjects[0] : ({})
     property bool summaryExpanded: false

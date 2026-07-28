@@ -77,7 +77,8 @@ if is_plat("windows") then
     add_cxxflags("/bigobj", "/Zc:preprocessor")
 end
 -- MARK: add requirements
-add_requires("ilias", "libsodium", "neko-proto-tools", "ilias-sql")
+add_requires("ilias", "libsodium", "neko-proto-tools", "ilias-sql",
+             "ffmpeg", "miniaudio")
 if not is_plat("linux") then
     add_requires("qt6quick >=6.2.0")
 end
@@ -134,6 +135,7 @@ add_requireconfs("**spdlog", {
                wchar_console = true}
 })
 
+includes("./third_party")
 includes("./tests")
 includes("./src/model")
 includes("./src/presentation")

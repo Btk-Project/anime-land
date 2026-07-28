@@ -703,9 +703,9 @@ auto LocalMediaImportService::playMedia(SourceItemId item)
     if (!mLauncher || !mLauncher(*url)) {
         co_return ilias::Err(libraryError(
             LibraryErrorCode::MediaLaunchFailed,
-            QStringLiteral("系统没有接受该视频的播放请求")));
+            QStringLiteral("播放器没有接受该视频的播放请求")));
     }
-    AL_LOG_INFO("[library.playback] external player launched "
+    AL_LOG_INFO("[library.playback] playback request accepted "
                 "source_item_id={}",
                 item.value);
     co_return LibraryResult<void> {};

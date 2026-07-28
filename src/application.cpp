@@ -20,6 +20,7 @@
 #include "model/persistence/catalog_store.hpp"
 #include "model/persistence/database.hpp"
 #include "model/persistence/library_store.hpp"
+#include "model/playback/playback_session.hpp"
 #include "common/app_settings.hpp"
 #include "common/config.h"
 #include "common/log.hpp"
@@ -29,10 +30,12 @@
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
 #include "presentation/settings_view_model.hpp"
+#include "presentation/playback/playback_controller.hpp"
 #include "view/cli/bangumi_cli_command.hpp"
 #include "view/cli/bangumi_cli_options.hpp"
 #include "view/cli/bangumi_cli_view.hpp"
 #include "view/qml/qml_application.hpp"
+#include "view/playback/playback_video_surface.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -237,7 +240,8 @@ auto runGraphicalApplication(
     if (fixtureMode) {
         AL_LOG_INFO("[app.qml] starting isolated fixture mode");
         return qml::runApplication(application, nullptr, nullptr, nullptr,
-                                   nullptr, nullptr, true, {});
+                                   nullptr, nullptr, nullptr, nullptr,
+                                   true, {});
     }
 
     GlobalAppSettingGuard globalSettings;
@@ -319,8 +323,19 @@ auto runGraphicalApplication(
     {
         auto catalogStore = std::move(*catalogStoreResult);
         auto libraryStore = std::move(*libraryStoreResult);
+        auto playbackVideoSurface =
+            std::make_shared<qml::PlaybackVideoSurface>();
+        PlaybackSession playbackSession([playbackVideoSurface] {
+            return makeNekoavPlaybackPipeline(playbackVideoSurface);
+        });
+        PlaybackController playbackController(playbackSession);
         LocalMediaImportService importService(libraryStore, catalogStore,
-                                              module);
+                                              module,
+                                              [&playbackController](
+                                                  const QUrl &source) {
+                                                  return playbackController
+                                                      .openMedia(source);
+                                              });
         LocalMetadataService metadataService(catalogStore, libraryStore);
         LibraryViewModel libraryViewModel(importService, metadataService);
         SubjectDetailsViewModel subjectDetailsViewModel(importService);
@@ -333,7 +348,9 @@ auto runGraphicalApplication(
         exitCode = qml::runApplication(
             application, &calendarViewModel, &bangumiBrowserViewModel,
             &libraryViewModel, &subjectDetailsViewModel,
-            &settingsViewModel, false, networkCacheOptions);
+            &settingsViewModel, &playbackController,
+            playbackVideoSurface.get(), false, networkCacheOptions);
+        playbackController.shutdown().wait();
     }
     auto closed = database.close().wait();
     if (!closed) {

@@ -1,6 +1,7 @@
 target("model")
     add_rules("qt.static")
     set_pcxxheader("$(projectdir)/src/pch.hpp")
+    add_deps("nekoav")
     add_files("$(projectdir)/src/common/**.cpp")
     add_files("$(projectdir)/src/model/**.cpp", "$(projectdir)/src/model/**.hpp")
     add_includedirs("$(projectdir)/src", {public = true})

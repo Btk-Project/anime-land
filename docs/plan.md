@@ -1177,25 +1177,32 @@ v0.1 必须满足：
 
 ### Milestone：Foundation
 
-- [ ] 建立应用仓库和 xmake 工程
-- [ ] 定义 PlaybackCommand
-- [ ] 定义 PlaybackSnapshot
+- [x] 建立应用仓库和 xmake 工程
+- [x] 定义 PlaybackCommand
+- [x] 定义 PlaybackSnapshot
 - [ ] 实现 AppRuntime
-- [ ] 建立 CatalogStore Schema/Form
+- [x] 建立 CatalogStore Schema/Form
 - [ ] 建立 Windows/Linux CI
 - [ ] 创建 FakePlaybackSession
 
 ### Milestone：Local Playback
 
-- [x] 实现 SourceItemId 到系统默认播放器的安全过渡入口
-- [ ] 实现真实 PlaybackSession
-- [ ] 接入 nekoav Pipeline
+- [x] 实现 SourceItemId 安全播放入口（过渡期系统播放器已由内置播放器替换）
+- [x] 实现真实 PlaybackSession
+- [x] 接入 nekoav Pipeline
 - [ ] 移除示例中的所有 `.wait()`
-- [ ] 实现 QRhi RGBA Renderer
-- [ ] 实现 Stop/Teardown
+- [x] 实现 QRhi RGBA Renderer
+- [x] 实现 Stop/Teardown
 - [ ] 实现进度持久化
-- [ ] 实现播放器 UI
+- [x] 实现播放器 UI
+- [x] 实现全屏与章节队列右侧抽屉
 - [ ] 增加 Seek 压力测试
+
+> 2026-07-28：当前已具备有界串行命令队列、generation、连续 Seek 合并、真实
+> `Pipeline + PlayBin`、消息映射与 `State::Null` teardown；RGBA 帧通过容量 1 mailbox 交给
+> `QQuickRhiItem` 在 render thread 上传 QRhi texture，应用播放入口和 PlayerPage 的
+> Play/Pause/Seek/进度显示、控制栏闲置自动隐藏与主题切换、全屏和章节队列右侧抽屉已接通。
+> 音量/轨道、进度持久化和 Seek 压力测试仍未完成。
 
 ### Milestone：Bangumi Library
 
