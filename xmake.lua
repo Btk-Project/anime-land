@@ -141,21 +141,59 @@ includes("./src/model")
 includes("./src/presentation")
 includes("./src/view")
 
--- MARK: targets
-target("main")
-    add_rules("qt.console")
-    add_includedirs("$(projectdir)/src")
-    add_packages("libsodium", "neko-proto-tools", "ilias-sql", "ilias")
-    add_deps("view", "presentation", "model")
-    add_frameworks("QtCore", "QtGui", "QtNetwork", "QtQml", "QtQuick",
-                   "QtQuickControls2", "QtQuickDialogs2")
-    add_files("src/*.cpp")
-    add_options("enable_spdlog")
-    on_load(function (target)
-        import("lua.auto", {rootdir = os.projectdir()})
-        auto().auto_add_packages(target, 
-                                {uses_ilias = true, 
-                                uses_expected = true, 
-                                uses_neko_proto_tools = true})
+task("docs")
+    set_category("plugin")
+    on_run(function ()
+        import("lib.detect.find_tool")
+
+        local doxygen = find_tool("doxygen")
+        -- Graphviz uses -V (not --version), so give xmake the tool-specific
+        -- probe instead of relying on find_tool's default version check.
+        local dot = find_tool("dot", {check = "-V"})
+        assert(doxygen, "doxygen was not found; install Doxygen before generating documentation")
+        assert(dot, "Graphviz 'dot' was not found; install Graphviz to generate dependency and call graphs")
+
+        local outputdir = path.join(os.projectdir(), "build", "docs", "doxygen")
+        local htmldir = path.join(outputdir, "html")
+        local indexfile = path.join(htmldir, "index.html")
+        local warningfile = path.join(outputdir, "warnings.log")
+        -- Doxygen updates existing output but does not remove pages for files
+        -- that have since been renamed or excluded. Rebuild this generated
+        -- subtree so navigation and dependency graphs never contain stale data.
+        os.rm(htmldir)
+        os.rm(warningfile)
+        os.mkdir(outputdir)
+        os.execv(doxygen.program, {"Doxyfile"}, {curdir = os.projectdir()})
+
+        print("Doxygen documentation: " .. indexfile)
+        if os.isfile(warningfile) and os.filesize(warningfile) > 0 then
+            print("Doxygen warnings: " .. warningfile)
+        end
+
+        -- Opening the generated entry point is a convenience only. Keep the
+        -- documentation task successful on headless hosts and CI machines.
+        if os.isfile(indexfile) then
+            local opener
+            local openargs
+            if is_host("windows") then
+                opener = "cmd"
+                openargs = {"/c", "start", "", indexfile}
+            elseif is_host("macosx") then
+                opener = "open"
+                openargs = {indexfile}
+            else
+                opener = "xdg-open"
+                openargs = {indexfile}
+            end
+            os.execv(opener, openargs, {
+                try = true,
+                detach = true,
+                stdout = os.nuldev(),
+                stderr = os.nuldev()
+            })
+        end
     end)
-target_end()
+    set_menu {
+        usage = "xmake docs",
+        description = "Generate and open API reference and architecture graphs with Doxygen."
+    }

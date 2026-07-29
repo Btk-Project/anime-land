@@ -152,6 +152,26 @@ TEST(SubjectDetailsViewModel, ResolvesBangumiIdentityBeforeDatabaseLoad) {
               21);
 }
 
+TEST(SubjectDetailsViewModel, IgnoresDuplicateBangumiOpenWhileLoading) {
+    int resolveCount = 0;
+    SubjectDetailsViewModel viewModel(
+        [](SubjectId) -> ilias::Task<LibraryResult<std::optional<SubjectLibraryDetails>>> {
+            co_return std::optional<SubjectLibraryDetails> {sampleDetails()};
+        },
+        [&resolveCount](std::int64_t) -> ilias::Task<LibraryResult<SubjectId>> {
+            ++resolveCount;
+            co_await ilias::sleep(10ms);
+            co_return SubjectId {21};
+        });
+
+    viewModel.openBangumiSubject(400602);
+    viewModel.openBangumiSubject(400602);
+    processUntilSettled(viewModel);
+
+    EXPECT_EQ(resolveCount, 1);
+    EXPECT_TRUE(viewModel.hasSubject());
+}
+
 TEST(SubjectDetailsViewModel, LoadsDatabaseBeforeRefreshingBangumi) {
     std::vector<QString> operations;
     SubjectDetailsViewModel viewModel(

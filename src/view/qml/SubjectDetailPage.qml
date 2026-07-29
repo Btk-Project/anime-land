@@ -190,7 +190,6 @@ Item {
         }
     }
 
-    Component.onCompleted: root.loadSubject()
     StackView.onActivated: root.loadSubject()
 
     Timer {

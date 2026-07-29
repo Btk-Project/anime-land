@@ -99,7 +99,7 @@ struct BangumiUserCollectionPage {
 官方请求是 GET，没有 request body；筛选值编码在 query string。CLI 把参数映射为 `BangumiCollectionQuery`：
 
 ```text
-anime-land collections \
+anime-land-cli collections \
   --config ./settings.toml \
   --subject-type anime \
   --collection-type doing \

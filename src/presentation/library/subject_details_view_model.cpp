@@ -173,6 +173,7 @@ void SubjectDetailsViewModel::openSubject(qlonglong subjectId) {
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
     mCurrentSubject = subject;
+    mBangumiId.reset();
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
     mCurrentEpisodePage = 1;
@@ -194,6 +195,9 @@ void SubjectDetailsViewModel::openBangumiSubject(
         reportInvalid(QStringLiteral("Bangumi 条目 ID 无效"));
         return;
     }
+    if ((mLoading || mRefreshing || mLoadingMore) && mBangumiId == bangumiSubjectId) {
+        return;
+    }
     mLoading = true;
     mRefreshing = false;
     mLoadingMore = false;
@@ -201,6 +205,7 @@ void SubjectDetailsViewModel::openBangumiSubject(
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
     mCurrentSubject.reset();
+    mBangumiId = bangumiSubjectId;
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
     mCurrentEpisodePage = 1;
@@ -293,6 +298,7 @@ void SubjectDetailsViewModel::clear() {
     mEpisodes.clear();
     mFirstPlayableEpisode.reset();
     mCurrentSubject.reset();
+    mBangumiId.reset();
     mPlayableEpisodeCount = 0;
     mTotalEpisodeCount = 0;
     mCurrentEpisodePage = 1;

@@ -215,9 +215,9 @@ App Secret 属于应用设置，不属于 TokenStore。设置保存时使用 lib
 ## CLI
 
 ```text
-anime-land login  [--config PATH] [--token-store memory|file|system] [--token-file PATH]
-anime-land status [--token-store memory|file|system] [--token-file PATH]
-anime-land logout [--token-store memory|file|system] [--token-file PATH]
+anime-land-cli login  [--config PATH] [--token-store memory|file|system] [--token-file PATH]
+anime-land-cli status [--token-store memory|file|system] [--token-file PATH]
+anime-land-cli logout [--token-store memory|file|system] [--token-file PATH]
 ```
 
 以上命令都支持 `--proxy URL` 和
@@ -226,7 +226,8 @@ anime-land logout [--token-store memory|file|system] [--token-file PATH]
 `--log-level` 优先于 `ANIME_LAND_LOG_LEVEL`。所有命令的 `--token-store` 默认值均为
 `system`。
 
-CLI 是正式 View，不是绕过 Presenter 的测试入口。将来 Qt View 实现同一 `BangumiView`，消费相同动态指导和结构化错误。
+CLI 是正式 View，不是绕过 Presenter 的测试入口；它与 `anime-land` GUI 使用不同二进制，
+但消费相同的 Model 用例和结构化错误。
 
 收藏查询命令属于 [collections.md](collections.md)，不在登录专题展开。
 

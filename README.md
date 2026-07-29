@@ -45,3 +45,26 @@ git add third_party/nekoav
 - [Bangumi 模块](docs/bangumi/README.md)
 - [本地数据库设计](docs/database/local_database_design.md)
 - [C++ 代码规范](docs/coding-style.md)
+
+### Doxygen API 与架构图
+
+Doxygen 会把生产 C++ 源码和上述 Markdown 设计文档整合为一份可搜索的 HTML，
+并通过 Graphviz 生成函数调用/被调用图、类继承与协作图、模板关系、头文件依赖图、
+目录依赖图和类层次图。`third_party`、测试与构建目录不会进入主文档。
+
+先安装 `doxygen` 和 `graphviz`，然后在仓库根目录运行：
+
+```bash
+xmake docs
+```
+
+生成成功后会尝试用系统默认浏览器打开入口文件；无桌面环境或打开失败不会影响生成结果。
+也可以先创建输出目录再直接运行 Doxygen：
+
+```bash
+mkdir -p build/docs/doxygen
+doxygen Doxyfile
+```
+
+入口文件生成在 `build/docs/doxygen/html/index.html`，解析警告记录在同级的
+`warnings.log`；整个 `build/docs/doxygen` 目录属于构建产物，不提交到仓库。

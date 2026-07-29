@@ -2,7 +2,7 @@
 
 > 文档状态：Living Design  
 > 架构范围：应用模块、依赖方向、前端边界和从当前代码到目标目录的迁移关系  
-> 前端决策：主图形界面使用 Qt Quick/QML；CLI 作为独立 View 适配器保留
+> 前端决策：主图形界面使用 Qt Quick/QML；CLI 作为独立 View 适配器和独立二进制保留
 > 当前工作接力：[HANDOFF.md](HANDOFF.md)
 
 本文是项目架构和目录归属的主文档。产品范围、阶段和验收标准见
@@ -42,7 +42,8 @@ Common 只提供无业务方向的基础能力。
 
 构建和 include 约定：
 
-- 生产代码按架构层聚合为 `model`、`presentation`、`view` 三个库 target，`main` 作为
+- 生产代码按架构层聚合为 `model`、`presentation`、`view`、`cli` 库 target；`main`
+  生成 `anime-land` GUI，`anime_land_cli` 生成 `anime-land-cli`，两个二进制各自拥有
   Runtime/Composition Root；目录和命名空间继续表达层内子模块所有权；
 - 所有 xmake target 使用 `$(projectdir)/src` 作为源码 include root，不使用随目录深度
   变化的 `./src`、`../../src` 等路径；
@@ -54,13 +55,14 @@ Common 只提供无业务方向的基础能力。
 
 ```text
 src/
-├─ main.cpp
+├─ process.*                 # 两个二进制共享的进程级初始化
 ├─ runtime/
 │  ├─ app_runtime.*
 │  └─ service_registry.*
 ├─ view/
+│  ├─ gui/                    # GUI composition root 与 main
 │  ├─ qml/                    # 正式 Qt Quick 页面和组件
-│  └─ cli/                    # CLI View 适配器
+│  └─ cli/                    # CLI View、独立 application 与 main
 ├─ presentation/
 │  ├─ bangumi/                # 登录、每日放送、搜索、收藏 Presenter/ViewModel
 │  ├─ playback/               # 播放 UI 状态和用户命令映射
@@ -93,7 +95,11 @@ TokenStore 抽象不应被 View 直接引用；系统凭据库等平台实现放
 
 ## 3. Runtime
 
-`AppRuntime` 是应用生命周期和依赖装配入口：
+GUI 与 CLI 使用独立 Runtime。`src/view/gui/application.cpp` 只装配 GUI；
+`src/view/cli/application.cpp` 只装配 CLI。两者共享配置格式、应用身份、TokenStore、
+Model 和 Presentation，不允许一个入口通过隐藏子命令启动另一个入口。
+
+GUI `AppRuntime` 负责完整应用生命周期：
 
 - 创建并安装 `ilias::QIoContext`；
 - 加载配置并初始化日志；
@@ -103,6 +109,8 @@ TokenStore 抽象不应被 View 直接引用；系统凭据库等平台实现放
 - 退出时先停止 PlaybackSession，再关闭网络、Store 和数据库。
 
 析构函数不等待异步清理。关闭流程必须通过显式异步 `shutdown()` 完成。
+CLI Runtime 是短生命周期 composition root，只创建当前命令需要的 Bangumi Module、
+Presenter 和终端 View，不打开本地媒体数据库，也不链接 QML/Qt Quick。
 
 ## 4. View 与 Presentation
 
@@ -239,14 +247,14 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 ## 7. 当前实现与迁移
 
 第一批物理迁移已经完成；构建 target 已从细粒度子模块库收敛为架构层级的
-`model`、`presentation`、`view`，CLI 行为保持不变：
+`model`、`presentation`、`view`、`cli`，GUI 与 CLI 使用独立二进制：
 
 | 当前目录 | 当前状态 |
 | --- | --- |
 | `src/model/bangumi/` | 登录、搜索、每日放送、公开章节读取、收藏读取已实现 |
 | `src/model/persistence/` | CatalogStore 与 LibraryStore 已实现；后者支持媒体导入/移除和 EpisodeMediaLink 持久化 |
 | `src/presentation/{bangumi,library}/` | Calendar 与 Library QObject ViewModel 已接入 QML；Library 支持 Subject/Episode 层级、未关联目录组、关联、解除和外部播放状态 |
-| `src/view/cli/` | CLI 参数、命令分派、查询转换、退出码和具体 View |
+| `src/view/cli/` | 独立 `anime-land-cli` 入口、CLI 参数、命令分派、查询转换、退出码和具体 View |
 | `src/view/qml/` | 每日放送与媒体导入/层级/关联/播放/移除使用真实 ViewModel；其余页面保留 fixture；支持全局 fixture 调试开关 |
 | `tests/unit/model/{bangumi,persistence}/` | Model 单元测试已随模块迁移 |
 | `tests/unit/view/cli/` | CLI 参数测试已随 View 迁移 |
@@ -255,7 +263,7 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 
 | 当前入口 | 目标目录 | 状态 |
 | --- | --- | --- |
-| `src/main.cpp` 中的装配代码 | `src/runtime/` | 尚未抽取 AppRuntime |
+| `src/view/gui/application.cpp` 中的 GUI 装配代码 | `src/runtime/` | 已与 CLI composition root 分离，尚未抽取 AppRuntime |
 | QML 双模式界面 | `src/view/qml/` | Calendar 与 Library 导入已真实接线，其余页面待逐页替换；fixture 模式长期保留 |
 | 无 | `src/model/playback/` | 尚未实现 PlaybackSession |
 | Library 领域设计 | `src/model/library/` | 已实现稳定身份、显式导入/移除、手动章节关联和系统播放器过渡入口；进度与内置播放闭环待实现 |

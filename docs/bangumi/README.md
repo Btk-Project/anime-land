@@ -2,7 +2,7 @@
 
 > 文档状态：Living Design  
 > 当前阶段：浏览器登录闭环 + 公开条目搜索/每日放送/详情/章节读取 + Collection Read 能力参考切片
-> 前端架构：View–Presentation–Model；CLI 当前使用 MVP Presenter，目标图形 View 使用 Qt Quick/QML ViewModel
+> 前端架构：View–Presentation–Model；`anime-land-cli` 使用 MVP Presenter，`anime-land` 使用 Qt Quick/QML ViewModel
 
 本文件只负责导航、当前状态和跨专题约束。协议细节、接口字段和测试清单放在专题文档中，避免每次修改都加载一份不断膨胀的总设计。
 
@@ -32,6 +32,7 @@
 - 公开条目详情支持可选认证 `GET /v0/subjects/{id}`；每日放送点击会先抓取完整 Subject 与全部章节并写入 CatalogStore，之后详情页只读取数据库。
 - 公开章节读取支持匿名 `GET /v0/episodes` 和最多 200 条分页；当前由媒体关联流程消费并持久化为本地 Episode 快照。
 - `BangumiCalendarViewModel` 已将真实时间表接入首页今日摘要与 Bangumi 默认页签；加载、错误、刷新和星期选择不进入 QML JavaScript 业务逻辑。
+- `BangumiBrowserViewModel` 已将公开搜索、账户恢复/登录/退出和收藏分页接入 QML；CLI 由独立二进制提供高级筛选与终端输出。
 - `search` CLI 命令支持位置关键词、类型、排序、标签与分页；尽力复用已保存会话，恢复失败时继续匿名查询。
 - `MemoryTokenStore`、`FileTokenStore` 和默认的 `SystemTokenStore`；系统后端覆盖 Linux Secret Service、Windows Credential Manager 与 macOS Keychain。
 - 首个能力参考切片：读取当前登录用户的收藏，包含过滤、分页、DTO 映射和结构化权限修复信息。
@@ -41,7 +42,6 @@
 
 - 真实 Bangumi 账号的端到端人工验收。
 - Refresh Token 自动刷新。
-- 搜索和收藏的真实 QML ViewModel 接入。
 - 收藏写入、章节进度写入、缓存与同步。
 
 ## 跨专题约束
@@ -57,7 +57,7 @@
 
 ## 运行日志
 
-默认日志级别为 `info`，覆盖应用启动/退出、设置加载、凭据后端、登录状态迁移、OAuth 阶段、HTTP 请求结果和收藏操作结果。所有 CLI 命令可通过 `--log-level` 切换为 `trace`、`debug`、`info`、`warn`、`error` 或 `critical`；未启用 spdlog 时，消息仍使用 `std::format` 语法格式化，再交给 `qDebug`、`qInfo`、`qWarning` 或 `qCritical`。`main` 默认设置接近 spdlog 的“时间、级别、文件:行号、正文”Qt 消息模板，显式的 `QT_MESSAGE_PATTERN` 环境变量可覆盖它；`ANIME_LAND_LOG_LEVEL` 也可设置级别，命令行参数优先。
+默认日志级别为 `info`，覆盖应用启动/退出、设置加载、凭据后端、登录状态迁移、OAuth 阶段、HTTP 请求结果和收藏操作结果。所有 CLI 命令可通过 `--log-level` 切换为 `trace`、`debug`、`info`、`warn`、`error` 或 `critical`；未启用 spdlog 时，消息仍使用 `std::format` 语法格式化，再交给 `qDebug`、`qInfo`、`qWarning` 或 `qCritical`。两个二进制默认使用接近 spdlog 的“时间、级别、文件:行号、正文”Qt 消息模板，显式的 `QT_MESSAGE_PATTERN` 环境变量可覆盖它；`ANIME_LAND_LOG_LEVEL` 也可设置级别，CLI 命令行参数优先。
 
 日志只使用固定路由模板和结构化元数据。禁止记录 token、授权码、client secret、OAuth state、完整回调 URL、原始 Token 响应和收藏响应正文；调试新增日志时也必须遵守这一边界。
 

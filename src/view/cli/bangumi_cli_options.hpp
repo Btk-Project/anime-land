@@ -185,18 +185,12 @@ struct SearchCommand {
     // clang-format on
 };
 
-struct GuiCommand {
-    CommonCommandOptions common;
-    ConfigFileOptions settings;
-};
-
 struct AnimeLandCommands {
     LoginCommand login;
     StatusCommand status;
     LogoutCommand logout;
     CollectionsCommand collections;
     SearchCommand search;
-    GuiCommand gui;
 
     // clang-format off
   struct Neko {
@@ -205,14 +199,13 @@ struct AnimeLandCommands {
         "status",      make_tags<arg_help<"verify the selected credential store">, ArgTags{.command = true}>(&AnimeLandCommands::status),
         "logout",      make_tags<arg_help<"clear the selected credential store">, ArgTags{.command = true}>(&AnimeLandCommands::logout),
         "collections", make_tags<arg_help<"get one page of the current user's Bangumi collections as JSON">, ArgTags{.command = true}>(&AnimeLandCommands::collections),
-        "search",      make_tags<arg_help<"search public Bangumi subjects; login is optional">, ArgTags{.command = true}>(&AnimeLandCommands::search),
-        "gui",         make_tags<arg_help<"start the GUI">, ArgTags{.command = true}>(&AnimeLandCommands::gui)
+        "search",      make_tags<arg_help<"search public Bangumi subjects; login is optional">, ArgTags{.command = true}>(&AnimeLandCommands::search)
     );
   };
     // clang-format on
 };
 
 using Command = std::variant<LoginCommand, StatusCommand, LogoutCommand,
-                             CollectionsCommand, SearchCommand, GuiCommand>;
+                             CollectionsCommand, SearchCommand>;
 
 } // namespace anime_land::cli

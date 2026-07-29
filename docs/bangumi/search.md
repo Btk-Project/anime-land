@@ -208,10 +208,10 @@ BangumiCapability
 
 ## CLI
 
-`main` 暴露公开搜索命令：
+`anime-land-cli` 暴露公开搜索命令：
 
 ```bash
-anime-land search "葬送的芙莉莲" \
+anime-land-cli search "葬送的芙莉莲" \
   --subject-type anime \
   --sort match \
   --tag 治愈 \

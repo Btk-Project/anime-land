@@ -3,12 +3,12 @@
 ## 1. 当前状态
 
 Qt Quick 主界面已经开始接入真实 Presentation：无参数启动时，每日放送通过
-`BangumiCalendarViewModel` 请求真实数据；现有 Bangumi CLI 子命令继续使用原来的参数
-入口。媒体库通过 `LibraryViewModel` 读取本地数据库，支持文件选择器显式导入、按
+`BangumiCalendarViewModel` 请求真实数据；Bangumi CLI 子命令由独立的
+`anime-land-cli` 二进制提供。媒体库通过 `LibraryViewModel` 读取本地数据库，支持文件选择器显式导入、按
 Subject → Episode → 媒体文件组织已关联内容、按父目录收纳未关联文件、搜索 Bangumi
 条目/章节、写入或解除手动关联，以及双击/右键调用系统播放器；
 条目详情通过 `SubjectDetailsViewModel` 读取 Catalog/Library 数据库并按章节打开关联媒体。
-Bangumi 主搜索页、收藏和内置播放器仍使用 fixture。
+真实模式下 Bangumi 主搜索页、账户收藏和内置播放器均已接入对应 Presentation/Model。
 
 设置 `ANIME_LAND_UI_FIXTURE=1` 可切换到完全隔离的 View 调试模式。该模式不加载应用
 设置、不创建 BangumiModule，也不访问 Bangumi、CatalogStore、LibraryStore 或
@@ -34,7 +34,7 @@ PlaybackSession。`ANIME_LAND_UI_SMOKE_TEST=1` 会自动启用此模式，保证
 | --- | --- | --- |
 | 首页 | 真实今日放送摘要；其余为 fixture | `BangumiCalendarViewModel`，后续 `HomeViewModel` |
 | 媒体库 | fixture 下保留条目卡片；真实模式支持导入、Subject/Episode/文件层级、未关联目录待整理、关联/解除、系统播放和安全移除 | `LibraryViewModel`（已接入） |
-| Bangumi | 真实每日放送；搜索/收藏仍为 fixture | `BangumiCalendarViewModel`，后续 `BangumiViewModel` |
+| Bangumi | 真实每日放送、公开搜索、账户状态和收藏；fixture 模式保留静态预览 | `BangumiCalendarViewModel`、`BangumiBrowserViewModel`（已接入） |
 | 条目详情 | fixture 模式保留静态预览；真实模式显示数据库元数据、章节、媒体关联和播放入口 | `SubjectDetailsViewModel`（已接入） |
 | 播放器 | 视频输出占位、控制栏、章节队列 | `PlaybackViewModel` |
 | 设置 | 四组设置入口和未接入提示 | `SettingsViewModel` |
@@ -104,9 +104,10 @@ SQL 或媒体控制逻辑搬入 QML JavaScript。
 ## 6. 启动与验证
 
 - `xmake run main`：启动 QML，并接入真实 Bangumi 每日放送和本地媒体库；
+- `xmake run main --config <path> --proxy <url> --log-level <level>`：只覆盖本次 GUI 启动配置；
 - `$env:ANIME_LAND_UI_FIXTURE='1'; xmake run main`：启动无网络的独立 View fixture；
 - `Remove-Item Env:ANIME_LAND_UI_FIXTURE`：在当前 PowerShell 会话中恢复默认真实模式；
-- `xmake run main --help`：验证原 CLI 入口；
+- `xmake run anime_land_cli --help`：验证独立 CLI 入口；
 - `ANIME_LAND_UI_SMOKE_TEST=1`：自动遍历六个页面并退出；
 - `ANIME_LAND_UI_SCREENSHOT=<path>`：渲染首页并保存诊断截图。
 
@@ -115,7 +116,7 @@ Windows 离屏平台配合软件 Qt Quick backend 时可能无法正确栅格化
 
 ## 7. 下一步
 
-1. 用真实 Bangumi 搜索替换 `BangumiPage` 的搜索 fixture；
-2. 接入账户收藏，并为每日放送叠加当前用户的在看状态；
-3. 用 PlaybackSession/nekoav 替换当前系统默认播放器过渡入口和播放器占位区域；
+1. 为每日放送叠加当前用户的在看状态；
+2. 补全搜索与收藏筛选条件；
+3. 补全播放器音量、轨道和进度持久化；
 4. 为公共组件添加 QML fixture 截图与键盘导航测试。

@@ -1,0 +1,145 @@
+# Doxygen configuration for anime-land.
+# Generate with `xmake docs` or `doxygen Doxyfile` from the repository root.
+
+PROJECT_NAME           = "anime-land"
+PROJECT_BRIEF          = "API reference, source relations, and architecture diagrams"
+OUTPUT_DIRECTORY       = build/docs/doxygen
+CREATE_SUBDIRS         = NO
+OUTPUT_LANGUAGE        = English
+
+# Keep paths stable and readable regardless of the checkout location.
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+STRIP_FROM_INC_PATH    = src
+
+# Treat the existing design documents as part of the searchable reference.
+INPUT                  = README.md \
+                         docs \
+                         src
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.c \
+                         *.cc \
+                         *.cpp \
+                         *.cxx \
+                         *.h \
+                         *.hh \
+                         *.hpp \
+                         *.hxx \
+                         *.md \
+                         *.dox
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */.git/* \
+                         */.xmake/* \
+                         */build/* \
+                         */build-*/* \
+                         */third_party/* \
+                         */tests/* \
+                         */src/common/config.h
+# Use an exact path: the repository also contains docs/bangumi/README.md,
+# which older Doxygen versions would otherwise mistake for a second main page.
+USE_MDFILE_AS_MAINPAGE = ./README.md
+
+# The project is only partially annotated today. Still expose every local type
+# and function so the generated reference is useful while comments are added.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_PACKAGE        = YES
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_LOCAL_METHODS  = YES
+EXTRACT_ANON_NSPACES   = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+HIDE_FRIEND_COMPOUNDS  = NO
+INTERNAL_DOCS          = YES
+BUILTIN_STL_SUPPORT    = YES
+
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MULTILINE_CPP_IS_BRIEF = YES
+INHERIT_DOCS           = YES
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+
+# Source navigation and reverse-reference panels make it possible to move from
+# a class/function to its implementation and consumers.
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+REFERENCES_LINK_SOURCE = YES
+VERBATIM_HEADERS       = YES
+SHOW_INCLUDE_FILES     = YES
+SHOW_USED_FILES        = YES
+SHOW_FILES             = YES
+SHOW_NAMESPACES        = YES
+
+# Parse Qt declarations without requiring Qt headers to be part of INPUT.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = YES
+FORCE_LOCAL_INCLUDES   = YES
+INCLUDE_PATH           = src
+PREDEFINED             = Q_OBJECT= \
+                         Q_GADGET= \
+                         Q_NAMESPACE= \
+                         Q_INVOKABLE= \
+                         Q_SIGNAL= \
+                         Q_SLOT= \
+                         Q_EMIT= \
+                         "Q_PROPERTY(...)= " \
+                         "Q_CLASSINFO(...)= " \
+                         "signals=public" \
+                         "slots="
+
+# HTML is the human-facing artifact. Search and the tree/sidebar expose files,
+# namespaces, classes, and the Markdown design documents in one place.
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_DYNAMIC_MENUS     = YES
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = YES
+DISABLE_INDEX          = NO
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+
+# Graphviz-backed architecture views. SVG keeps large call/dependency graphs
+# readable and interactive in the browser.
+HAVE_DOT               = YES
+DOT_NUM_THREADS        = 4
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+GROUP_GRAPHS           = YES
+UML_LOOK               = YES
+DOT_UML_DETAILS        = YES
+UML_LIMIT_NUM_FIELDS   = 30
+TEMPLATE_RELATIONS     = YES
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = YES
+DIR_GRAPH_MAX_DEPTH    = 4
+DOT_GRAPH_MAX_NODES    = 150
+MAX_DOT_GRAPH_DEPTH    = 0
+DOT_MULTI_TARGETS      = YES
+GENERATE_LEGEND        = YES
+DOT_CLEANUP            = YES
+
+# Report malformed documentation, but do not flood output merely because a
+# currently undocumented symbol is extracted by EXTRACT_ALL.
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_IF_INCOMPLETE_DOC = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = NO
+WARN_LOGFILE           = build/docs/doxygen/warnings.log

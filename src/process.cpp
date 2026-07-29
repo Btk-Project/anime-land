@@ -1,4 +1,4 @@
-#include "application.hpp"
+#include "process.hpp"
 
 #include "common/log.hpp"
 
@@ -7,16 +7,12 @@
 #include <clocale>
 
 #if defined(_WIN32)
-#include <Windows.h>
+    #include <Windows.h>
 #endif
 
-namespace {
+namespace anime_land {
 
-struct LoggingShutdownGuard {
-    ~LoggingShutdownGuard() { anime_land::shutdownLogging(); }
-};
-
-void configureProcessLocale() {
+ProcessGuard::ProcessGuard() {
     // A C/POSIX LC_CTYPE prevents several Linux input-method modules from
     // committing non-ASCII preedit text correctly.
     std::setlocale(LC_CTYPE, "");
@@ -29,10 +25,6 @@ void configureProcessLocale() {
 #endif
 }
 
-} // namespace
+ProcessGuard::~ProcessGuard() { shutdownLogging(); }
 
-auto main(int argc, char **argv) -> int {
-    LoggingShutdownGuard loggingShutdownGuard;
-    configureProcessLocale();
-    return anime_land::runApplication(argc, argv);
-}
+} // namespace anime_land

@@ -258,7 +258,7 @@ local-file descriptor 版本、JSON、相对路径、canonical 目录边界、�
 - `src/view/qml/SubjectDetailPage.qml`：fixture 模式保留静态详情；真实模式只消费
   `SubjectDetailsViewModel`；
 - `src/view/qml/qml_application.*`：注入 Calendar、Library 与 SubjectDetails ViewModel；
-- `src/main.cpp`：当前数据库、Store、Service、ViewModel 装配和关闭顺序。
+- `src/view/gui/application.cpp`：当前数据库、Store、Service、ViewModel 装配和关闭顺序。
 
 ### Tests
 

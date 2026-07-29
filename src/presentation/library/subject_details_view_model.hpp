@@ -141,6 +141,7 @@ private:
     QString mNoticeMessage;
     std::optional<EpisodeId> mFirstPlayableEpisode;
     std::optional<SubjectId> mCurrentSubject;
+    std::optional<std::int64_t> mBangumiId;
     std::uint64_t mGeneration = 0;
     int mPlayableEpisodeCount = 0;
     int mTotalEpisodeCount = 0;
