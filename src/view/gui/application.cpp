@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QSet>
 #include <QStandardPaths>
 #include <QtLogging>
 
@@ -14,8 +15,10 @@
 #include "common/app_settings.hpp"
 #include "common/config.h"
 #include "common/log.hpp"
+#include "adapters/episode_provider_js/plugin_runtime.hpp"
 #include "model/bangumi/bangumi.hpp"
 #include "model/bangumi/network_cache.hpp"
+#include "model/episode_resource/episode_resource.hpp"
 #include "model/library/local_media_import.hpp"
 #include "model/library/local_metadata.hpp"
 #include "model/persistence/catalog_store.hpp"
@@ -26,6 +29,7 @@
 #include "presentation/bangumi/calendar_view_model.hpp"
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
+#include "presentation/episode_resource/episode_resources_view_model.hpp"
 #include "presentation/playback/playback_controller.hpp"
 #include "presentation/settings_view_model.hpp"
 #include "view/playback/playback_video_surface.hpp"
@@ -194,6 +198,7 @@ private:
             mBangumiSettings = settings->bangumi_settings;
             mSqlSettings = settings->sql_settings;
             mGeneralSettings = settings->general_settings;
+            mPluginSettings = settings->plugin_settings;
             AL_LOG_INFO("[app.qml] settings {}", *loaded == AppSettingsFileState::Created ? "created" : "loaded");
         }
         applyLogSettings(mGeneralSettings, mOptions.logLevel);
@@ -241,6 +246,93 @@ private:
     }
 
     auto runShell(persistence::CatalogStore catalogStore, persistence::LibraryStore libraryStore) -> int {
+        episode_provider_js::initializeBuiltinEpisodeProviderResources();
+        EpisodeProviderRegistry episodeProviderRegistry;
+        OnlinePlayableCache onlinePlayableCache;
+        EpisodeResourceService episodeResourceService(episodeProviderRegistry,
+                                                      onlinePlayableCache,
+                                                      catalogStore);
+        const QString providerConfigDirectory =
+            QString::fromUtf8(mPluginSettings.provider_config_directory);
+        if (mPluginSettings.enabled &&
+            !QDir().mkpath(providerConfigDirectory)) {
+            AL_LOG_WARN(
+                "[episode-provider.runtime] cannot create provider config directory path={}",
+                providerConfigDirectory.toStdString());
+        }
+        QSet<QString> loadedPluginIds;
+        auto registerPlugin = [&](episode_provider_js::LoadedEpisodePlugin plugin,
+                                  QStringView source) {
+            auto registered = episodeProviderRegistry.registerProviders(
+                plugin.providers);
+            if (!registered) {
+                AL_LOG_WARN(
+                    "[episode-provider.runtime] plugin registration failed id={} source={} code={} message={}",
+                    plugin.manifest.id.toStdString(), source.toString().toStdString(),
+                    episodeProviderErrorCodeName(registered.error().code),
+                    registered.error().message.toStdString());
+                return;
+            }
+            loadedPluginIds.insert(plugin.manifest.id);
+            AL_LOG_INFO(
+                "[episode-provider.runtime] plugin loaded id={} version={} source={} providers={} network_requests=0",
+                plugin.manifest.id.toStdString(),
+                plugin.manifest.version.toStdString(),
+                source.toString().toStdString(), plugin.providers.size());
+        };
+
+        if (mPluginSettings.enabled && mPluginSettings.load_builtin) {
+            const QString providerConfig =
+                QDir(providerConfigDirectory)
+                    .filePath(QStringLiteral("org.anime-land.yhdmmm.json"));
+            auto yhdmmmPlugin = episode_provider_js::loadEpisodeProviderPlugin(
+                episode_provider_js::builtinYhdmmmPackageRoot(), providerConfig);
+            if (!yhdmmmPlugin) {
+                AL_LOG_WARN(
+                    "[episode-provider.runtime] builtin plugin unavailable code={} message={}",
+                    episodeProviderErrorCodeName(yhdmmmPlugin.error().code),
+                    yhdmmmPlugin.error().message.toStdString());
+            }
+            else {
+                registerPlugin(std::move(*yhdmmmPlugin),
+                               QStringLiteral("builtin"));
+            }
+        }
+
+        if (mPluginSettings.enabled && mPluginSettings.scan_on_startup) {
+            const QString pluginRoot =
+                QString::fromUtf8(mPluginSettings.plugins_directory);
+            const QString providerDirectory =
+                QDir(pluginRoot).filePath(QStringLiteral("episode-providers"));
+            if (!QDir().mkpath(providerDirectory)) {
+                AL_LOG_WARN(
+                    "[episode-provider.runtime] cannot create plugin scan directory path={}",
+                    providerDirectory.toStdString());
+            }
+            else {
+                auto scanned = episode_provider_js::scanEpisodeProviderPlugins(
+                    providerDirectory, providerConfigDirectory,
+                    mPluginSettings.max_packages,
+                    mPluginSettings.allow_symlinks,
+                    QStringList(loadedPluginIds.cbegin(),
+                                loadedPluginIds.cend()));
+                for (auto &plugin : scanned.plugins) {
+                    registerPlugin(std::move(plugin), QStringLiteral("user"));
+                }
+                for (const auto &issue : scanned.issues) {
+                    AL_LOG_WARN(
+                        "[episode-provider.runtime] plugin skipped path={} code={} message={}",
+                        issue.packagePath.toStdString(),
+                        episodeProviderErrorCodeName(issue.error.code),
+                        issue.error.message.toStdString());
+                }
+                AL_LOG_INFO(
+                    "[episode-provider.runtime] startup scan completed directory={} loaded={} skipped={} network_requests=0",
+                    providerDirectory.toStdString(), scanned.plugins.size(),
+                    scanned.issues.size());
+            }
+        }
+
         BangumiModuleOptions bangumiOptions;
         bangumiOptions.features.push_back(bangumiUserCollectionsFeature());
         const auto networkCacheOptions = bangumiNetworkCacheOptions(mBangumiSettings);
@@ -251,6 +343,11 @@ private:
             return makeNekoavPlaybackPipeline(playbackVideoSurface);
         });
         PlaybackController playbackController(playbackSession);
+        EpisodeResourcesViewModel episodeResourcesViewModel(
+            episodeResourceService, episodeProviderRegistry,
+            [&playbackController](const QUrl &source, const QString &title) {
+                return playbackController.openMedia(source, title);
+            });
         LocalMediaImportService importService(libraryStore, catalogStore, module, [&playbackController](const QUrl &source) {
             return playbackController.openMedia(source);
         });
@@ -264,9 +361,12 @@ private:
 
         AL_LOG_INFO("[app.qml] starting live model mode");
         const int exitCode = qml::runApplication(mApplication, &calendarViewModel, &bangumiBrowserViewModel, &libraryViewModel,
-                                                 &subjectDetailsViewModel, &settingsViewModel, &playbackController,
+                                                 &subjectDetailsViewModel, &episodeResourcesViewModel,
+                                                 &settingsViewModel, &playbackController,
                                                  playbackVideoSurface.get(), false, networkCacheOptions);
         playbackController.shutdown().wait();
+        episodeProviderRegistry.clear();
+        onlinePlayableCache.clear();
         return exitCode;
     }
 
@@ -283,6 +383,7 @@ private:
     BangumiSettings mBangumiSettings;
     SqlSettings mSqlSettings;
     GeneralSettings mGeneralSettings;
+    PluginSettings mPluginSettings;
     std::unique_ptr<TokenStore> mTokenStore;
     bool mPersistentCredentials = true;
 };
@@ -290,7 +391,9 @@ private:
 auto runGraphicalApplication(QGuiApplication &application, StartupOptions options) -> int {
     if (fixtureUiRequested()) {
         AL_LOG_INFO("[app.qml] starting isolated fixture mode");
-        return qml::runApplication(application, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, true, {});
+        return qml::runApplication(application, nullptr, nullptr, nullptr,
+                                   nullptr, nullptr, nullptr, nullptr,
+                                   nullptr, true, {});
     }
     return GraphicalRuntime(application, std::move(options)).run();
 }

@@ -78,7 +78,7 @@ if is_plat("windows") then
 end
 -- MARK: add requirements
 add_requires("ilias", "libsodium", "neko-proto-tools", "ilias-sql",
-             "ffmpeg", "miniaudio")
+             "ffmpeg", "miniaudio", "libxml2")
 if not is_plat("linux") then
     add_requires("qt6quick >=6.2.0")
 end
@@ -138,6 +138,7 @@ add_requireconfs("**spdlog", {
 includes("./third_party")
 includes("./tests")
 includes("./src/model")
+includes("./src/adapters")
 includes("./src/presentation")
 includes("./src/view")
 

@@ -115,7 +115,7 @@ ApplicationWindow {
                     ? currentPage.episodeModel : []
             root.openPlayer({
                 "title": title,
-                "episode": "本地媒体",
+                "episode": "已选择资源",
                 "episodes": episodes
             })
         }

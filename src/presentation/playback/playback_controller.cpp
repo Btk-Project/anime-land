@@ -111,18 +111,21 @@ auto PlaybackController::mediaTitle() const -> QString {
     return mMediaTitle;
 }
 
-auto PlaybackController::source() const -> QUrl {
-    return mSnapshot.source.value_or(QUrl {});
-}
-
 auto PlaybackController::openMedia(const QUrl &source) -> bool {
-    if (mClosed || !source.isValid() || source.isEmpty()) {
-        return false;
-    }
     const QString title = source.isLocalFile()
                               ? QFileInfo(source.toLocalFile()).completeBaseName()
                               : source.fileName();
-    mMediaTitle = title.isEmpty() ? QStringLiteral("本地媒体") : title;
+    return openMedia(source, title.isEmpty() ? QStringLiteral("媒体") : title);
+}
+
+auto PlaybackController::openMedia(const QUrl &source, QString displayTitle)
+    -> bool {
+    if (mClosed || !source.isValid() || source.isEmpty()) {
+        return false;
+    }
+    displayTitle = displayTitle.trimmed();
+    mMediaTitle = displayTitle.isEmpty() ? QStringLiteral("媒体")
+                                         : std::move(displayTitle);
     emit mediaChanged();
     emit openRequested(mMediaTitle);
     mTasks.spawn(openAndPlay(source));

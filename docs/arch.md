@@ -39,6 +39,8 @@ Common 只提供无业务方向的基础能力。
 7. QRhi Renderer 只消费标准化 `VideoFrame`，不感知 Bangumi、媒体库页面或账号状态。
 8. Runtime 是 composition root；除测试装配外，其他模块不自行创建全局服务。
 9. Common 不得成为业务代码收容目录，也不得反向依赖上层模块。
+10. Episode Provider 不依赖 Bangumi DTO 或 nekoav；JS 插件只通过受控 Host API 访问网络，
+    在线搜索结果只进入有 TTL 的 cache，不成为 Catalog 或 Library 的持久对象。
 
 构建和 include 约定：
 
@@ -66,11 +68,13 @@ src/
 ├─ presentation/
 │  ├─ bangumi/                # 登录、每日放送、搜索、收藏 Presenter/ViewModel
 │  ├─ playback/               # 播放 UI 状态和用户命令映射
-│  └─ library/                # 媒体库、条目和章节 UI 状态
+│  ├─ library/                # 媒体库、条目和章节 UI 状态
+│  └─ episode_resource/       # 详情页本地/在线分集资源与 Provider 状态
 ├─ model/
 │  ├─ bangumi/                # Module 门面、OAuth、Client、能力和 TokenStore 抽象
 │  ├─ playback/               # PlaybackSession、Command、Snapshot、Error
 │  ├─ library/                # 媒体资源、章节关联、最近播放和进度
+│  ├─ episode_resource/       # Provider 协议、Registry、资源聚合与临时 cache
 │  └─ persistence/            # LocalDatabase、CatalogStore 和后续 Store
 ├─ media/
 │  ├─ nekoav/                 # 应用与 nekoav 的适配边界
@@ -78,6 +82,8 @@ src/
 │  ├─ render/                 # VideoOutputItem、QRhi Renderer、Frame Proxy
 │  ├─ subtitle/
 │  └─ danmaku/
+├─ adapters/
+│  └─ episode_provider_js/    # JS 引擎、插件加载与受控 Host API
 ├─ platform/                  # 系统凭据实现和平台差异适配
 └─ common/                    # 日志、配置、序列化和小型通用工具
 
@@ -200,7 +206,18 @@ UI 和播放层不得把 Bangumi ID、文件路径或 provider 私有 descriptor
 不直接写数据库。当前身份、媒体资源、可播放项、章节关联和进度的数据语义见
 [library/library_design.md](library/library_design.md)。
 
-### 5.4 Persistence
+### 5.4 Episode Resource 与在线 Provider
+
+Episode Resource 聚合某一集的持久本地视频/字幕与临时在线 playable。JS Provider 按本地
+Subject/Episode 元数据搜索；结果只进入有 TTL 的 cache，不写 `media_resources`、
+`source_items` 或 `episode_media_links`。QML 只持有临时 handle，短期媒体 URL、Cookie、
+请求头和插件 JSON 不进入数据库。用户明确下载完成后，产物才作为本地 SourceItem 持久化。
+工厂、插件协议、缓存、播放与下载设计见
+[online_source/online_source_design.md](online_source/online_source_design.md)，当前 ABI、工作空间、
+权限和内置插件接入状态见
+[online_source/plugin_runtime.md](online_source/plugin_runtime.md)。
+
+### 5.5 Persistence
 
 `LocalDatabase` 只负责连接；具体 Store 负责自己的关系、长期 Form、事务和类型化
 查询。当前 `CatalogStore` 管理条目、外部身份、标签和章节六个关系，`LibraryStore`
@@ -235,6 +252,11 @@ AsyncMediaSource / LocalFileSource
 网络业务逻辑不进入 FFmpeg Element。异步网络源通过有界缓存或 ring buffer 向同步
 AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型和调度器。
 
+线上视频最终要求所有交给解码器的网络字节先进入可配置的 Memory/Disk buffer store；
+第一期 HLS/m3u8 仍使用 NekoAV 现有 URL API，自定义 stream 输入只保留扩展点。可淘汰缓存
+与持久下载具有不同生命周期。详细语义见
+[线上源与媒体缓存设计](online_source/online_source_design.md)。
+
 `VideoOutputItem` 是 View 与 Renderer 的窄适配边界。具体采用哪一种 Qt Quick
 场景图/QRhi 接入 API，应在实现前通过 ADR 确认，同时满足 Qt 版本兼容要求。
 
@@ -253,10 +275,13 @@ AVIO callback 供数。字幕和弹幕共享播放时钟，但使用独立模型
 | --- | --- |
 | `src/model/bangumi/` | 登录、搜索、每日放送、公开章节读取、收藏读取已实现 |
 | `src/model/persistence/` | CatalogStore 与 LibraryStore 已实现；后者支持媒体导入/移除和 EpisodeMediaLink 持久化 |
+| `src/model/episode_resource/` | EpisodeProvider 类型、Registry、EpisodeResourceService、惰性 OnlinePlayable 与非持久 TTL cache 已实现 |
+| `src/adapters/episode_provider_js/` | QJSEngine JSON 状态机 Host、libxml2/XPath、受控网络、内置 yhdmmm 包与启动目录扫描已实现；详情页按章节在线搜索与播放已接线 |
+| `src/presentation/episode_resource/` | 当前章节目录查询、1～N Provider 选择、分源搜索状态、安全结果 DTO 与 opaque handle 播放已实现 |
 | `src/presentation/{bangumi,library}/` | Calendar 与 Library QObject ViewModel 已接入 QML；Library 支持 Subject/Episode 层级、未关联目录组、关联、解除和外部播放状态 |
 | `src/view/cli/` | 独立 `anime-land-cli` 入口、CLI 参数、命令分派、查询转换、退出码和具体 View |
 | `src/view/qml/` | 每日放送与媒体导入/层级/关联/播放/移除使用真实 ViewModel；其余页面保留 fixture；支持全局 fixture 调试开关 |
-| `tests/unit/model/{bangumi,persistence}/` | Model 单元测试已随模块迁移 |
+| `tests/unit/model/{bangumi,persistence,episode_provider}/` | Model 单元测试及 yhdmmm 完全脱网解析链已接入 |
 | `tests/unit/view/cli/` | CLI 参数测试已随 View 迁移 |
 
 后续迁移与新增模块：

@@ -17,3 +17,23 @@
 | `${APP_NAME}`        | 程序名称                     | `MyApp`                                    |
 | `${USER_NAME}`       | 当前用户名                   | `Alice`                                    |
 | `${HOST_NAME}`       | 当前主机名                   | `myhost`                                   |
+
+## 2. 插件目录设置
+
+`settings.toml` 默认包含：
+
+```toml
+[plugin_settings]
+enabled = true
+scan_on_startup = true
+load_builtin = true
+allow_symlinks = false
+plugins_directory = "${APP_DATA_DIR}/plugins"
+provider_config_directory = "${APP_CONFIG_DIR}/providers"
+max_packages = 64
+```
+
+Episode Provider 包放在
+`${plugins_directory}/episode-providers/<package-directory>/`。正常启动会自动扫描一级子目录；
+扫描与加载不发起网络请求，只有用户后续显式 ping/search/resolve 才访问声明过权限的站点。
+单插件用户配置独立放在 `${provider_config_directory}/<pluginId>.json`，应用不会修改插件包。

@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="/anime-land/plugins/episode-providers/org.anime-land.yhdmmm">
+    <file alias="manifest.json">org.anime-land.yhdmmm/manifest.json</file>
+    <file alias="config.defaults.json">org.anime-land.yhdmmm/config.defaults.json</file>
+    <file alias="config.schema.json">org.anime-land.yhdmmm/config.schema.json</file>
+    <file alias="index.js">org.anime-land.yhdmmm/index.js</file>
+    <file alias="README.md">org.anime-land.yhdmmm/README.md</file>
+  </qresource>
+</RCC>

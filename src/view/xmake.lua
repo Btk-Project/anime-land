@@ -24,7 +24,7 @@ target("main")
     add_files("./gui/main.cpp", "./gui/application.cpp", "$(projectdir)/src/process.cpp")
     add_includedirs("$(projectdir)/src")
     add_packages("libsodium", "neko-proto-tools", "ilias-sql", "ilias")
-    add_deps("view", "presentation", "model")
+    add_deps("view", "presentation", "model", "episode_provider_js")
     add_frameworks("QtCore", "QtGui", "QtNetwork", "QtQml", "QtQuick",
                    "QtQuickControls2", "QtQuickDialogs2")
     add_options("enable_spdlog")

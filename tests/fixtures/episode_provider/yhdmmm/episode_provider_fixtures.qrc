@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/anime-land/tests/episode-provider/yhdmmm">
+    <file alias="search.html">search.html</file>
+    <file alias="detail.html">detail.html</file>
+    <file alias="play.html">play.html</file>
+  </qresource>
+</RCC>

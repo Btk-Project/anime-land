@@ -8,6 +8,7 @@ class BangumiCalendarViewModel;
 class BangumiBrowserViewModel;
 class LibraryViewModel;
 class SubjectDetailsViewModel;
+class EpisodeResourcesViewModel;
 class ApplicationSettingsViewModel;
 class PlaybackController;
 }
@@ -24,6 +25,7 @@ auto runApplication(QGuiApplication &application,
                     BangumiBrowserViewModel *bangumiBrowserViewModel,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
+                    EpisodeResourcesViewModel *episodeResourcesViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
                     PlaybackController *playbackController,
                     PlaybackVideoSurface *playbackVideoSurface,

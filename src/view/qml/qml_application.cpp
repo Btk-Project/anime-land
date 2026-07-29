@@ -7,6 +7,7 @@
 #include "presentation/bangumi/browser_view_model.hpp"
 #include "presentation/library/library_view_model.hpp"
 #include "presentation/library/subject_details_view_model.hpp"
+#include "presentation/episode_resource/episode_resources_view_model.hpp"
 #include "presentation/settings_view_model.hpp"
 #include "presentation/playback/playback_controller.hpp"
 #include "model/bangumi/network_cache.hpp"
@@ -59,6 +60,7 @@ auto runApplication(QGuiApplication &application,
                     BangumiBrowserViewModel *bangumiBrowserViewModel,
                     LibraryViewModel *libraryViewModel,
                     SubjectDetailsViewModel *subjectDetailsViewModel,
+                    EpisodeResourcesViewModel *episodeResourcesViewModel,
                     ApplicationSettingsViewModel *settingsViewModel,
                     PlaybackController *playbackController,
                     PlaybackVideoSurface *playbackVideoSurface,
@@ -124,6 +126,9 @@ auto runApplication(QGuiApplication &application,
     engine.rootContext()->setContextProperty(
         QStringLiteral("subjectDetailsViewModel"),
         subjectDetailsViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("episodeResourcesViewModel"),
+        episodeResourcesViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("settingsViewModel"), settingsViewModel);
     engine.rootContext()->setContextProperty(

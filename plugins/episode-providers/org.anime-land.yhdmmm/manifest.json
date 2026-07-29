@@ -1,0 +1,24 @@
+{
+  "manifestVersion": 1,
+  "id": "org.anime-land.yhdmmm",
+  "name": "樱花动漫示例 Provider",
+  "version": "0.1.0",
+  "runtime": {
+    "api": "episode-provider",
+    "version": 1
+  },
+  "entry": "index.js",
+  "config": {
+    "schema": "config.schema.json",
+    "defaults": "config.defaults.json"
+  },
+  "permissions": {
+    "network": [
+      "https://yhdmmm.com",
+      "https://www.yhdmmm.com"
+    ],
+    "media": [
+      "https://*.ffzy-online5.com"
+    ]
+  }
+}

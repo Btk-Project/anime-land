@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "mirrors": [
+    {
+      "id": "primary",
+      "baseUrl": "https://yhdmmm.com",
+      "enabled": true,
+      "priority": 100
+    },
+    {
+      "id": "www",
+      "baseUrl": "https://www.yhdmmm.com",
+      "enabled": true,
+      "priority": 90
+    }
+  ],
+  "maxCandidates": 2,
+  "preferredLines": [],
+  "requestTimeoutMs": 10000,
+  "minimumRequestIntervalMs": 750,
+  "maximumRequestsPerOperation": 6,
+  "maximumResponseBytes": 4194304
+}

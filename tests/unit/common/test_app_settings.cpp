@@ -263,6 +263,11 @@ TEST(AppSettings, LoadOrCreateWritesEveryDefaultField) {
   EXPECT_NE(contents.find("general_settings"), std::string::npos);
   EXPECT_NE(contents.find("log_level"), std::string::npos);
   EXPECT_NE(contents.find("${APP_LOG_DIR}"), std::string::npos);
+  EXPECT_NE(contents.find("plugin_settings"), std::string::npos);
+  EXPECT_NE(contents.find("plugins_directory"), std::string::npos);
+  EXPECT_NE(contents.find("provider_config_directory"), std::string::npos);
+  EXPECT_NE(contents.find("${APP_DATA_DIR}/plugins"), std::string::npos);
+  EXPECT_NE(contents.find("${APP_CONFIG_DIR}/providers"), std::string::npos);
 
   {
     auto settings = settingsGuard.get();
@@ -274,6 +279,15 @@ TEST(AppSettings, LoadOrCreateWritesEveryDefaultField) {
     EXPECT_EQ(settings->bangumi_settings.cache_max_size,
               512ULL * 1024ULL * 1024ULL);
     EXPECT_EQ(settings->bangumi_settings.cache_ttl_days, 7);
+    EXPECT_TRUE(settings->plugin_settings.enabled);
+    EXPECT_TRUE(settings->plugin_settings.scan_on_startup);
+    EXPECT_TRUE(settings->plugin_settings.load_builtin);
+    EXPECT_FALSE(settings->plugin_settings.allow_symlinks);
+    EXPECT_EQ(settings->plugin_settings.plugins_directory,
+              expandVariables("${APP_DATA_DIR}/plugins"));
+    EXPECT_EQ(settings->plugin_settings.provider_config_directory,
+              expandVariables("${APP_CONFIG_DIR}/providers"));
+    EXPECT_EQ(settings->plugin_settings.max_packages, 64);
   }
 
   const auto loaded = settingsGuard.loadOrCreate(path);

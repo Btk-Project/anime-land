@@ -6,6 +6,7 @@ Rectangle {
 
     property var episode
     signal primaryAction(var episode)
+    signal onlineAction(var episode)
 
     implicitHeight: 66
     radius: Theme.radius
@@ -90,6 +91,12 @@ Rectangle {
             primary: root.episode && root.episode.progress > 0
                      && root.episode.progress < 1
             onClicked: root.primaryAction(root.episode)
+        }
+
+        AppButton {
+            Layout.preferredWidth: 78
+            text: "在线"
+            onClicked: root.onlineAction(root.episode)
         }
     }
 

@@ -12,6 +12,7 @@
 #include "model/persistence/catalog_store.hpp"
 #include "model/persistence/database.hpp"
 #include "model/persistence/database_schema.hpp"
+#include "model/episode_resource/episode_resource.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -145,6 +146,37 @@ TEST(CatalogStore, UsesExplicitForeignKeyConnectionOption) {
                             ") VALUES (999, 'bangumi', 'missing', 1)")
                         .wait();
     EXPECT_FALSE(inserted);
+}
+
+TEST(EpisodeResourceService, BuildsProviderQueryFromLocalCatalogOnly) {
+    auto database = openMemoryDatabase();
+    auto catalog = openCatalog(database);
+    auto subject = catalog.upsertSubjectSnapshot(sampleSnapshot()).wait();
+    ASSERT_TRUE(subject) << subject.error().message();
+    auto episodes = catalog
+                        .upsertEpisodeSnapshots(
+                            *subject,
+                            {sampleEpisode(QStringLiteral("1234"), 0,
+                                           QStringLiteral("Journey's End"))})
+                        .wait();
+    ASSERT_TRUE(episodes) << episodes.error().message();
+    ASSERT_EQ(episodes->size(), 1U);
+
+    anime_land::EpisodeProviderRegistry registry;
+    anime_land::OnlinePlayableCache cache;
+    anime_land::EpisodeResourceService service(registry, cache, catalog);
+    auto query = service.query(episodes->front()).wait();
+
+    ASSERT_TRUE(query) << query.error().message.toStdString();
+    EXPECT_EQ(query->subjectId, *subject);
+    EXPECT_EQ(query->episodeId, episodes->front());
+    EXPECT_EQ(query->subjectName, QStringLiteral("葬送的芙莉莲"));
+    EXPECT_NE(std::ranges::find(query->subjectAliases,
+                               QStringLiteral("Sousou no Frieren")),
+              query->subjectAliases.end());
+    EXPECT_EQ(query->episodeName, QStringLiteral("章节标题"));
+    ASSERT_TRUE(query->episodeNumber);
+    EXPECT_DOUBLE_EQ(*query->episodeNumber, 1.0);
 }
 
 TEST(CatalogStore, EnforcesCompositeIdentityUsedByUpsert) {

@@ -24,7 +24,6 @@ class PlaybackController final : public QObject {
     Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY snapshotChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY snapshotChanged)
     Q_PROPERTY(QString mediaTitle READ mediaTitle NOTIFY mediaChanged)
-    Q_PROPERTY(QUrl source READ source NOTIFY snapshotChanged)
 
 public:
     explicit PlaybackController(PlaybackSession &session,
@@ -38,9 +37,9 @@ public:
     auto durationMs() const -> qint64;
     auto errorMessage() const -> QString;
     auto mediaTitle() const -> QString;
-    auto source() const -> QUrl;
 
     auto openMedia(const QUrl &source) -> bool;
+    auto openMedia(const QUrl &source, QString displayTitle) -> bool;
     auto shutdown() -> ilias::Task<void>;
 
     Q_INVOKABLE void play();

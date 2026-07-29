@@ -16,6 +16,7 @@
         <file>SubjectCard.qml</file>
         <file>MediaItemCard.qml</file>
         <file>EpisodeRow.qml</file>
+        <file>OnlineSourceDialog.qml</file>
         <file>SettingCard.qml</file>
         <file>HomePage.qml</file>
         <file>LibraryPage.qml</file>

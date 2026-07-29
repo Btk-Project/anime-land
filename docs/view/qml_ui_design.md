@@ -9,6 +9,8 @@ Subject → Episode → 媒体文件组织已关联内容、按父目录收纳�
 条目/章节、写入或解除手动关联，以及双击/右键调用系统播放器；
 条目详情通过 `SubjectDetailsViewModel` 读取 Catalog/Library 数据库并按章节打开关联媒体。
 真实模式下 Bangumi 主搜索页、账户收藏和内置播放器均已接入对应 Presentation/Model。
+章节行还可打开 `EpisodeResourcesViewModel` 驱动的在线资源面板；该面板只在用户明确勾选
+1～N 个 Provider 并点击搜索后访问网络。
 
 设置 `ANIME_LAND_UI_FIXTURE=1` 可切换到完全隔离的 View 调试模式。该模式不加载应用
 设置、不创建 BangumiModule，也不访问 Bangumi、CatalogStore、LibraryStore 或
@@ -35,7 +37,7 @@ PlaybackSession。`ANIME_LAND_UI_SMOKE_TEST=1` 会自动启用此模式，保证
 | 首页 | 真实今日放送摘要；其余为 fixture | `BangumiCalendarViewModel`，后续 `HomeViewModel` |
 | 媒体库 | fixture 下保留条目卡片；真实模式支持导入、Subject/Episode/文件层级、未关联目录待整理、关联/解除、系统播放和安全移除 | `LibraryViewModel`（已接入） |
 | Bangumi | 真实每日放送、公开搜索、账户状态和收藏；fixture 模式保留静态预览 | `BangumiCalendarViewModel`、`BangumiBrowserViewModel`（已接入） |
-| 条目详情 | fixture 模式保留静态预览；真实模式显示数据库元数据、章节、媒体关联和播放入口 | `SubjectDetailsViewModel`（已接入） |
+| 条目详情 | fixture 模式保留静态预览；真实模式显示数据库元数据、章节、本地媒体，以及按章节选择 1～N 个 Provider 的临时在线搜索和播放入口 | `SubjectDetailsViewModel`、`EpisodeResourcesViewModel`（已接入） |
 | 播放器 | 视频输出占位、控制栏、章节队列 | `PlaybackViewModel` |
 | 设置 | 四组设置入口和未接入提示 | `SettingsViewModel` |
 
@@ -61,6 +63,13 @@ LibraryStore 中每章关联的媒体显示名；章节播放只提交本地 `Ep
 “重试读取”。任何路径都不会混入 `FixtureData.episodes`。播放进度尚未持久化，详情 DTO
 中的进度目前固定为零。远端空章节标题显示为“标题待公布”；没有关联媒体时，禁用的
 主操作文案为“暂无可播放媒体”，不显示可操作的“开始播放”。
+
+每个真实章节行另有独立的“在线”操作。在线资源 Dialog 打开时只从 CatalogStore 读取该章
+对应的番剧名、别名、章节名、类型和集数，不发网络请求；用户勾选 1～N 个已启用 Provider
+并确认后才并行搜索。每个 Provider 独立显示 Loading、Empty、Error 或建议列表，建议卡
+展示来源返回的番剧标题、分集、线路、匹配置信度和非敏感资源类型，便于用户处理空结果或
+模糊匹配。点击某个建议后，QML 只提交临时 handle；resolve 得到的媒体 URL 和插件 data
+直接在 C++ 中交给播放器，不进入 QML，也不写入 Catalog/Library。
 
 每日放送是 Bangumi 的默认页签。页面以一行星期按钮切换七日内容，首页的`完整放送表`
 直接切到该页；两处共享同一个 Calendar ViewModel，避免重复请求。`只看在看`依赖当前

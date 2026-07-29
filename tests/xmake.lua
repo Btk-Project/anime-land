@@ -62,6 +62,12 @@ local function default_test_config(file)
         config.run_timeout = 10000
         config.deps = {"view"}
         config.qt_frameworks = {"QtCore", "QtGui", "QtQml", "QtQuick"}
+    elseif group == "episode_provider" then
+        config.run_timeout = 10000
+        config.deps = {"episode_provider_js"}
+        config.qt_frameworks = {"QtCore", "QtNetwork", "QtQml"}
+        append_values(config.files,
+                      "$(projectdir)/tests/fixtures/episode_provider/yhdmmm/episode_provider_fixtures.qrc")
     -- else
         -- append_values(config.files, "../src/proto_base.cpp", "../src/jsonrpc.cpp")
     end

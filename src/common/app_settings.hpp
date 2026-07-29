@@ -149,11 +149,36 @@ struct GeneralSettings {
     // clang-format on
 };
 
+struct PluginSettings {
+    bool enabled = true;
+    bool scan_on_startup = true;
+    bool load_builtin = true;
+    bool allow_symlinks = false;
+    std::string plugins_directory = "${APP_DATA_DIR}/plugins";
+    std::string provider_config_directory = "${APP_CONFIG_DIR}/providers";
+    int max_packages = 64;
+
+    // clang-format off
+    struct Neko {
+        constexpr static auto value = Object(
+            "enabled",                   make_tags<ParserTag {.skippable = true}>(&PluginSettings::enabled),
+            "scan_on_startup",           make_tags<ParserTag {.skippable = true}>(&PluginSettings::scan_on_startup),
+            "load_builtin",              make_tags<ParserTag {.skippable = true}>(&PluginSettings::load_builtin),
+            "allow_symlinks",            make_tags<ParserTag {.skippable = true}>(&PluginSettings::allow_symlinks),
+            "plugins_directory",         make_tags<ParserTag {.skippable = true}, ConfigTags{.variable = true}>(&PluginSettings::plugins_directory),
+            "provider_config_directory", make_tags<ParserTag {.skippable = true}, ConfigTags{.variable = true}>(&PluginSettings::provider_config_directory),
+            "max_packages",              make_tags<ParserTag {.skippable = true}>(&PluginSettings::max_packages)
+        );
+    };
+    // clang-format on
+};
+
 struct AppSettings {
     SqlSettings sql_settings;
     BangumiSettings bangumi_settings;
     AppearanceSettings appearance_settings;
     GeneralSettings general_settings;
+    PluginSettings plugin_settings;
 
     // clang-format off
     struct Neko {
@@ -161,7 +186,8 @@ struct AppSettings {
             "sql_settings",        &AppSettings::sql_settings,
             "bangumi_settings",    make_tags<ParserTag{.skippable = true}>(&AppSettings::bangumi_settings),
             "appearance_settings", make_tags<ParserTag{.skippable = true}>(&AppSettings::appearance_settings),
-            "general_settings",    make_tags<ParserTag{.skippable = true}>(&AppSettings::general_settings)
+            "general_settings",    make_tags<ParserTag{.skippable = true}>(&AppSettings::general_settings),
+            "plugin_settings",     make_tags<ParserTag{.skippable = true}>(&AppSettings::plugin_settings)
         );
     };
     // clang-format on

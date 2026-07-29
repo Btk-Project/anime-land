@@ -235,6 +235,10 @@ Item {
         }
     }
 
+    OnlineSourceDialog {
+        id: onlineSourceDialog
+    }
+
     Dialog {
         id: removeMetadataDialog
         anchors.centerIn: parent
@@ -602,7 +606,7 @@ Item {
                           + " 个数据库章节 · "
                           + (subjectDetailsViewModel
                              ? subjectDetailsViewModel.playableEpisodeCount : 0)
-                          + " 个本页可播放"
+                          + " 个本页有本地媒体"
             }
 
             Loader {
@@ -638,6 +642,15 @@ Item {
                             }
                             else {
                                 root.libraryRequested()
+                            }
+                        }
+                        onOnlineAction: episode => {
+                            if (uiFixtureMode) {
+                                root.fixtureNotice =
+                                    "Fixture：在线源只在真实详情页按需搜索"
+                            }
+                            else {
+                                onlineSourceDialog.openForEpisode(episode)
                             }
                         }
                     }
